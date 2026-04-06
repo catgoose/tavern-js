@@ -4,6 +4,8 @@ Client-side companion for the [tavern](https://github.com/catgoose/tavern)
 SSE pub/sub engine. Declarative UI behaviors for connection state, replay
 gaps, and topic changes.
 
+![tavern-js](https://raw.githubusercontent.com/catgoose/screenshots/main/tavern-js/tavern-js.png)
+
 ## Why?
 
 Tavern is incredibly smart on the server — adaptive backpressure, replay
