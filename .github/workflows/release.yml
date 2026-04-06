@@ -89,7 +89,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          registry-url: https://registry.npmjs.org
 
       - run: npm ci
       - run: npm test
@@ -147,8 +146,3 @@ jobs:
             dist/tavern.min.js \
             --title "${{ steps.version.outputs.version }}" \
             --generate-notes
-
-      - name: Publish to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

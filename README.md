@@ -26,7 +26,7 @@ no idea something went wrong.
 **After** (with tavern.js):
 
 ```html
-<script src="/static/tavern.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/catgoose/tavern-js@latest/dist/tavern.min.js"></script>
 <div id="notifications"
      sse-connect="/sse/notifications"
      sse-swap="message"
@@ -44,23 +44,26 @@ That's it. No custom JavaScript. Tavern already knows when things go wrong —
 
 ## Install
 
-**npm:**
+**CDN (jsdelivr):**
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/catgoose/tavern-js@latest/dist/tavern.min.js"></script>
+```
+
+Pin to a specific version:
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/catgoose/tavern-js@v0.1.0/dist/tavern.min.js"></script>
+```
+
+**Direct download:** Grab `dist/tavern.min.js` from the
+[latest release](https://github.com/catgoose/tavern-js/releases/latest).
+
+**Vendor it** (like dothog does for HTMX, Alpine, etc.):
 
 ```bash
-npm install tavern-sse
+curl -Lso public/js/tavern.min.js https://cdn.jsdelivr.net/gh/catgoose/tavern-js@latest/dist/tavern.min.js
 ```
-
-```html
-<script src="node_modules/tavern-sse/dist/tavern.min.js"></script>
-```
-
-**CDN:**
-
-```html
-<script src="https://unpkg.com/tavern-sse/dist/tavern.min.js"></script>
-```
-
-**Copy-paste:** Download `dist/tavern.min.js` and serve it.
 
 ## How It Works
 
