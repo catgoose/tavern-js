@@ -59,7 +59,7 @@ Pin to a specific version:
 **Direct download:** Grab `dist/tavern.min.js` from the
 [latest release](https://github.com/catgoose/tavern-js/releases/latest).
 
-**Vendor it** (like dothog does for HTMX, Alpine, etc.):
+**Vendor it:**
 
 ```bash
 curl -Lso public/js/tavern.min.js https://cdn.jsdelivr.net/gh/catgoose/tavern-js@latest/dist/tavern.min.js
