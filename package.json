@@ -1,0 +1,47 @@
+{
+  "name": "tavern-sse",
+  "version": "0.1.0",
+  "description": "Client-side companion for the tavern SSE pub/sub engine. Declarative UI behaviors for connection state, replay gaps, and topic changes.",
+  "main": "src/tavern.js",
+  "module": "src/tavern.js",
+  "browser": "dist/tavern.min.js",
+  "files": [
+    "src/tavern.js",
+    "dist/tavern.min.js"
+  ],
+  "scripts": {
+    "build": "esbuild src/tavern.js --bundle --minify --format=iife --outfile=dist/tavern.min.js",
+    "lint": "oxlint src/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run lint && npm run test && npm run build"
+  },
+  "keywords": [
+    "sse",
+    "server-sent-events",
+    "htmx",
+    "pub-sub",
+    "real-time",
+    "tavern",
+    "eventsource"
+  ],
+  "author": "catgoose",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/catgoose/tavern-js.git"
+  },
+  "homepage": "https://github.com/catgoose/tavern-js",
+  "bugs": {
+    "url": "https://github.com/catgoose/tavern-js/issues"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "jsdom": "^26.0.0",
+    "oxlint": "^1.0.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "@oxlint/binding-linux-x64-gnu": "^1.58.0"
+  }
+}
