@@ -426,3 +426,13 @@ describe("tavern.js", () => {
     });
   });
 });
+
+describe("non-browser environment", () => {
+  it("does not crash when document is undefined", async () => {
+    const { execSync } = await import("node:child_process");
+    const { resolve } = await import("node:path");
+    const src = resolve(__dirname, "../src/tavern.js");
+    // Run in plain Node (no jsdom) — should not throw
+    execSync(`node -e "require('${src}')"`, { stdio: "pipe" });
+  });
+});
