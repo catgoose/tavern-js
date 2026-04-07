@@ -412,6 +412,34 @@ describe("tavern.js", () => {
     });
   });
 
+  describe("init idempotency and destroy", () => {
+    it("does not create multiple observers on repeated init()", () => {
+      const handle1 = window.Tavern.init();
+      const handle2 = window.Tavern.init();
+      // Same observer instance returned
+      expect(handle2.observer).toBe(handle1.observer);
+    });
+
+    it("re-scans elements on repeated init()", () => {
+      window.Tavern.init();
+      const el = createSSEElement();
+      window.Tavern.init();
+      expect(el._tavernBound).toBe(true);
+    });
+
+    it("destroy() disconnects observer and allows re-init", () => {
+      const handle = window.Tavern.init();
+      const disconnectSpy = vi.spyOn(handle.observer, "disconnect");
+
+      window.Tavern.destroy();
+      expect(disconnectSpy).toHaveBeenCalledOnce();
+
+      // Re-init should work and create a new observer
+      const handle2 = window.Tavern.init();
+      expect(handle2.observer).not.toBe(handle.observer);
+    });
+  });
+
   describe("debug mode", () => {
     it("logs when debug attribute is present", () => {
       const el = createSSEElement({ "data-tavern-debug": "" });

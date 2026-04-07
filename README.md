@@ -133,7 +133,10 @@ document.addEventListener("tavern:replay-gap", (e) => {
 
 ## Programmatic API
 
-tavern.js exposes `window.Tavern` for manual control:
+tavern.js auto-initializes when the DOM is ready — you do not need to call
+`init()` unless you want to re-scan after removing the observer.
+
+`window.Tavern` exposes:
 
 ```javascript
 // Bind tavern listeners to a specific element
@@ -143,7 +146,11 @@ Tavern.bind(document.getElementById("my-sse-element"));
 Tavern.scanAndBind();
 
 // Full initialization (scan + start MutationObserver)
+// Idempotent — safe to call multiple times
 Tavern.init();
+
+// Tear down: disconnect observer and reset state
+Tavern.destroy();
 ```
 
 ## Dynamic Elements
