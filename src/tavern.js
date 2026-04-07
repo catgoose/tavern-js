@@ -252,11 +252,15 @@
     });
 
     el.addEventListener("htmx:sseOpen", function () {
-      // Only clear disconnected state if we were previously disconnected.
-      // On initial connect, _tavernDisconnected is undefined/false, so this
-      // is a no-op.
+      // Transport reopened — do NOT call markReconnected() here.
+      // The server's tavern-reconnected control event is the authoritative
+      // signal that recovery (replay, gap handling) is complete.
+      // Dispatch a transport-level event for debugging / UI hints only.
       if (el._tavernDisconnected) {
-        markReconnected(el, config);
+        debug(config, "transport open (awaiting server confirmation)", el);
+        el.dispatchEvent(
+          new CustomEvent("tavern:transport-open", { bubbles: true }),
+        );
       }
     });
 
