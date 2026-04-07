@@ -326,6 +326,19 @@ describe("tavern.js", () => {
       expect(banner.textContent).toBe("Updates missed!");
     });
 
+    it("banner is keyboard-accessible", () => {
+      const el = createSSEElement({ "data-tavern-gap-action": "banner" });
+      window.Tavern.bind(el);
+
+      el.dispatchEvent(
+        new CustomEvent("tavern-replay-gap", { detail: { data: "" } }),
+      );
+
+      const banner = el.querySelector("[data-tavern-gap-banner]");
+      expect(banner.tagName).toBe("BUTTON");
+      expect(banner.getAttribute("type")).toBe("button");
+    });
+
     it("does not create duplicate banners", () => {
       const el = createSSEElement({ "data-tavern-gap-action": "banner" });
       window.Tavern.bind(el);
