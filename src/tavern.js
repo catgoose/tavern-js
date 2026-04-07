@@ -27,6 +27,12 @@
   /** @type {string} SSE event name for topic subscription changes */
   const EVT_TOPICS_CHANGED = "tavern-topics-changed";
 
+  /** @type {MutationObserver|null} Active observer instance, if initialized */
+  var _observer = null;
+
+  /** @type {boolean} Whether tavern has been initialized */
+  var _initialized = false;
+
   /**
    * @typedef {Object} TavernConfig
    * @property {string} [reconnectingClass] - CSS class applied during disconnection
@@ -319,15 +325,31 @@
   }
 
   /**
+   * Tears down tavern.js: disconnects the observer and resets state.
+   * After calling destroy(), init() can be called again to re-initialize.
+   */
+  function destroy() {
+    if (_observer) {
+      _observer.disconnect();
+      _observer = null;
+    }
+    _initialized = false;
+  }
+
+  /**
    * Initializes tavern.js: scans existing elements and starts observing
-   * for new ones.
+   * for new ones. Idempotent — subsequent calls re-scan but do not create
+   * additional observers.
    *
-   * @returns {{ observer: MutationObserver, bind: function }} Cleanup handle
+   * @returns {{ observer: MutationObserver, bind: function, destroy: function }} Handle
    */
   function init() {
     scanAndBind();
-    var observer = observe();
-    return { observer: observer, bind: bind };
+    if (!_initialized) {
+      _observer = observe();
+      _initialized = true;
+    }
+    return { observer: _observer, bind: bind, destroy: destroy };
   }
 
   // Auto-initialize when the DOM is ready
@@ -345,6 +367,7 @@
       bind: bind,
       init: init,
       scanAndBind: scanAndBind,
+      destroy: destroy,
     };
   }
 
@@ -353,5 +376,6 @@
     exports.bind = bind;
     exports.init = init;
     exports.scanAndBind = scanAndBind;
+    exports.destroy = destroy;
   }
 })();
