@@ -191,9 +191,10 @@
     // Avoid duplicate banners
     if (el.querySelector("[data-tavern-gap-banner]")) return;
 
-    var banner = document.createElement("div");
+    var banner = document.createElement("button");
     banner.setAttribute("data-tavern-gap-banner", "");
     banner.setAttribute("role", "alert");
+    banner.setAttribute("type", "button");
     banner.textContent =
       config.gapBannerText ||
       "Connection interrupted. Click to refresh.";
