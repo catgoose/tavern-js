@@ -183,7 +183,7 @@ describe("tavern.js", () => {
       expect(spy).toHaveBeenCalledOnce();
     });
 
-    it("clears disconnected state on htmx:sseOpen after disconnect", () => {
+    it("does not clear disconnected state on htmx:sseOpen alone", () => {
       const el = createSSEElement({
         "data-tavern-reconnecting-class": "opacity-50",
       });
@@ -192,8 +192,57 @@ describe("tavern.js", () => {
       el.dispatchEvent(new Event("htmx:sseError"));
       expect(el.classList.contains("opacity-50")).toBe(true);
 
+      // Transport reopen should NOT clear disconnected state
       el.dispatchEvent(new Event("htmx:sseOpen"));
+      expect(el.classList.contains("opacity-50")).toBe(true);
+      expect(el._tavernDisconnected).toBe(true);
+    });
+
+    it("clears disconnected state only on server tavern-reconnected event", () => {
+      const el = createSSEElement({
+        "data-tavern-reconnecting-class": "opacity-50",
+      });
+      window.Tavern.bind(el);
+
+      el.dispatchEvent(new Event("htmx:sseError"));
+      expect(el.classList.contains("opacity-50")).toBe(true);
+
+      // Transport reopen — still disconnected
+      el.dispatchEvent(new Event("htmx:sseOpen"));
+      expect(el.classList.contains("opacity-50")).toBe(true);
+
+      // Server confirms recovery — now reconnected
+      el.dispatchEvent(new Event("tavern-reconnected"));
       expect(el.classList.contains("opacity-50")).toBe(false);
+      expect(el._tavernDisconnected).toBe(false);
+    });
+
+    it("dispatches tavern:transport-open on htmx:sseOpen after disconnect", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const transportSpy = vi.fn();
+      const reconnectedSpy = vi.fn();
+      el.addEventListener("tavern:transport-open", transportSpy);
+      el.addEventListener("tavern:reconnected", reconnectedSpy);
+
+      el.dispatchEvent(new Event("htmx:sseError"));
+      el.dispatchEvent(new Event("htmx:sseOpen"));
+
+      // Transport event fires, but reconnected does not
+      expect(transportSpy).toHaveBeenCalledOnce();
+      expect(reconnectedSpy).not.toHaveBeenCalled();
+    });
+
+    it("does not dispatch tavern:transport-open on initial connection", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const spy = vi.fn();
+      el.addEventListener("tavern:transport-open", spy);
+
+      el.dispatchEvent(new Event("htmx:sseOpen"));
+      expect(spy).not.toHaveBeenCalled();
     });
 
     it("ignores htmx:sseOpen on initial connection", () => {
