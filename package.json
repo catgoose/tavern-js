@@ -1,6 +1,6 @@
 {
   "name": "tavern-sse",
-  "version": "0.0.6",
+  "version": "0.0.9",
   "description": "Client-side companion for the tavern SSE pub/sub engine. Declarative UI behaviors for connection state, replay gaps, and topic changes.",
   "main": "src/tavern.js",
   "files": [
