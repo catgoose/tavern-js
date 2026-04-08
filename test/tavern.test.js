@@ -598,6 +598,29 @@ describe("lifeline registration", () => {
     warnSpy.mockRestore();
   });
 
+  it("allows new lifeline after previous lifeline is removed from DOM", () => {
+    const el1 = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(el1);
+    expect(window.Tavern.lifeline()).toBe(el1);
+
+    // Remove lifeline from DOM
+    el1.remove();
+
+    // New lifeline should be accepted
+    const el2 = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(el2);
+    expect(window.Tavern.lifeline()).toBe(el2);
+  });
+
+  it("Tavern.lifeline() returns null when lifeline element is detached", () => {
+    const el = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(el);
+    expect(window.Tavern.lifeline()).toBe(el);
+
+    el.remove();
+    expect(window.Tavern.lifeline()).toBeNull();
+  });
+
   it("lifeline survives scoped stream disconnect/reconnect", () => {
     const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
     window.Tavern.bind(lifeline);
@@ -689,6 +712,81 @@ describe("scoped stream lifecycle", () => {
     const info = window.Tavern.stream("chat");
     expect(info.el).toBe(el);
     expect(info.state).toBe("warming");
+  });
+
+  it("duplicate scope is rejected when existing element is still in DOM", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const el1 = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el1);
+
+    const el2 = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el2);
+
+    expect(window.Tavern.stream("chat").el).toBe(el1);
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("duplicate scope");
+
+    warnSpy.mockRestore();
+  });
+
+  it("allows scope takeover when previous owner is removed from DOM", () => {
+    const el1 = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el1);
+
+    el1.remove();
+
+    const el2 = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el2);
+
+    expect(window.Tavern.stream("chat").el).toBe(el2);
+  });
+
+  it("old element error does not trigger fallback after scope takeover", () => {
+    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(lifeline);
+
+    const el1 = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el1);
+    simulateSSEOpen(el1);
+    window.Tavern.promote("chat");
+
+    // Remove old element, bind replacement
+    el1.remove();
+
+    const el2 = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el2);
+    simulateSSEOpen(el2);
+    window.Tavern.promote("chat");
+
+    const spy = vi.fn();
+    lifeline.addEventListener("tavern:stream-fallback", spy);
+
+    // Error on OLD element should NOT trigger fallback
+    el1.dispatchEvent(new Event("htmx:sseError"));
+    expect(spy).not.toHaveBeenCalled();
+
+    // Error on NEW element should trigger fallback
+    el2.dispatchEvent(new Event("htmx:sseError"));
+    expect(spy).toHaveBeenCalledOnce();
   });
 
   it("Tavern.streams() returns all registered streams", () => {

@@ -329,7 +329,7 @@
 
     // Lifeline registration
     if (config.role === "lifeline") {
-      if (_lifeline) {
+      if (_lifeline && document.body.contains(_lifeline)) {
         console.warn("[tavern] duplicate lifeline ignored — only one allowed");
       } else {
         _lifeline = el;
@@ -339,33 +339,42 @@
 
     // Scoped stream registration
     if (config.role === "scoped" && config.scope) {
-      _streams[config.scope] = { el: el, state: "warming" };
-      debug(config, "registered scoped stream", config.scope);
-      el.dispatchEvent(
-        new CustomEvent("tavern:stream-warming", {
-          bubbles: true,
-          detail: { scope: config.scope },
-        }),
-      );
+      var existing = _streams[config.scope];
+      if (existing && existing.el !== el && document.body.contains(existing.el)) {
+        console.warn(
+          "[tavern] duplicate scope '" + config.scope + "' ignored — already owned by another element",
+        );
+      } else {
+        _streams[config.scope] = { el: el, state: "warming" };
+        debug(config, "registered scoped stream", config.scope);
+        el.dispatchEvent(
+          new CustomEvent("tavern:stream-warming", {
+            bubbles: true,
+            detail: { scope: config.scope },
+          }),
+        );
+      }
     }
 
     // HTMX SSE lifecycle events
     el.addEventListener("htmx:sseError", function () {
       markDisconnected(el, config);
 
-      // Scoped stream fallback logic
+      // Scoped stream fallback logic — only act if this element still owns the scope
       if (config.role === "scoped" && config.scope) {
         var entry = _streams[config.scope];
-        if (entry && entry.state === "active" && _lifeline) {
-          _lifeline.dispatchEvent(
-            new CustomEvent("tavern:stream-fallback", {
-              bubbles: true,
-              detail: { scope: config.scope },
-            }),
-          );
-        }
-        if (entry && entry.state !== "retired") {
-          entry.state = "warming";
+        if (entry && entry.el === el) {
+          if (entry.state === "active" && _lifeline) {
+            _lifeline.dispatchEvent(
+              new CustomEvent("tavern:stream-fallback", {
+                bubbles: true,
+                detail: { scope: config.scope },
+              }),
+            );
+          }
+          if (entry.state !== "retired") {
+            entry.state = "warming";
+          }
         }
       }
     });
@@ -382,10 +391,10 @@
         );
       }
 
-      // Scoped stream transitions to "ready" on sseOpen
+      // Scoped stream transitions to "ready" on sseOpen — only if this element owns the scope
       if (config.role === "scoped" && config.scope) {
         var entry = _streams[config.scope];
-        if (entry && (entry.state === "warming")) {
+        if (entry && entry.el === el && entry.state === "warming") {
           entry.state = "ready";
           el.dispatchEvent(
             new CustomEvent("tavern:stream-ready", {
@@ -490,6 +499,9 @@
    * @returns {HTMLElement|null} The lifeline element
    */
   function getLifeline() {
+    if (_lifeline && !document.body.contains(_lifeline)) {
+      _lifeline = null;
+    }
     return _lifeline;
   }
 
