@@ -197,20 +197,25 @@
     // Avoid duplicate banners
     if (el.querySelector("[data-tavern-gap-banner]")) return;
 
-    var banner = document.createElement("button");
-    banner.setAttribute("data-tavern-gap-banner", "");
-    banner.setAttribute("role", "alert");
-    banner.setAttribute("type", "button");
-    banner.textContent =
-      config.gapBannerText ||
-      "Connection interrupted. Click to refresh.";
-    banner.style.cursor = "pointer";
+    var wrapper = document.createElement("div");
+    wrapper.setAttribute("data-tavern-gap-banner", "");
 
-    banner.addEventListener("click", function () {
+    var msg = document.createElement("span");
+    msg.setAttribute("role", "alert");
+    msg.textContent =
+      config.gapBannerText || "Connection interrupted — some events were missed.";
+
+    var btn = document.createElement("button");
+    btn.setAttribute("type", "button");
+    btn.textContent = "Refresh";
+    btn.style.cursor = "pointer";
+    btn.addEventListener("click", function () {
       window.location.reload();
     });
 
-    el.prepend(banner);
+    wrapper.appendChild(msg);
+    wrapper.appendChild(btn);
+    el.prepend(wrapper);
   }
 
   /**

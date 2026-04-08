@@ -403,9 +403,16 @@ describe("tavern.js", () => {
 
       const banner = el.querySelector("[data-tavern-gap-banner]");
       expect(banner).not.toBeNull();
-      expect(banner.textContent).toBe(
-        "Connection interrupted. Click to refresh.",
+
+      const alert = banner.querySelector("[role='alert']");
+      expect(alert).not.toBeNull();
+      expect(alert.textContent).toBe(
+        "Connection interrupted — some events were missed.",
       );
+
+      const btn = banner.querySelector("button");
+      expect(btn).not.toBeNull();
+      expect(btn.textContent).toBe("Refresh");
     });
 
     it("uses custom banner text", () => {
@@ -418,11 +425,11 @@ describe("tavern.js", () => {
       const source = simulateSSEOpen(el);
       fireSSEEvent(source, "tavern-replay-gap", "");
 
-      const banner = el.querySelector("[data-tavern-gap-banner]");
-      expect(banner.textContent).toBe("Updates missed!");
+      const alert = el.querySelector("[data-tavern-gap-banner] [role='alert']");
+      expect(alert.textContent).toBe("Updates missed!");
     });
 
-    it("banner is keyboard-accessible", () => {
+    it("banner separates alert region from interactive button", () => {
       const el = createSSEElement({ "data-tavern-gap-action": "banner" });
       window.Tavern.bind(el);
 
@@ -430,8 +437,16 @@ describe("tavern.js", () => {
       fireSSEEvent(source, "tavern-replay-gap", "");
 
       const banner = el.querySelector("[data-tavern-gap-banner]");
-      expect(banner.tagName).toBe("BUTTON");
-      expect(banner.getAttribute("type")).toBe("button");
+      // Wrapper is a div, not a button
+      expect(banner.tagName).toBe("DIV");
+
+      // Alert region is non-interactive span
+      const alert = banner.querySelector("[role='alert']");
+      expect(alert.tagName).toBe("SPAN");
+
+      // Button is a separate interactive element
+      const btn = banner.querySelector("button");
+      expect(btn.getAttribute("type")).toBe("button");
     });
 
     it("does not create duplicate banners", () => {
