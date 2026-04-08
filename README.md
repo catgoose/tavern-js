@@ -159,6 +159,68 @@ tavern.js uses a `MutationObserver` to automatically bind to `sse-connect`
 elements added after page load. This works with HTMX's `hx-swap`, `hx-boost`,
 and any other mechanism that injects HTML into the DOM.
 
+## App Shell & Lifeline Connections
+
+Modern SPAs and HTMX-driven apps often have a persistent "shell" (sidebar,
+header, global notifications) alongside content areas that change on
+navigation. Tavern supports this pattern with **lifeline connections** and
+**scoped streams**.
+
+A **lifeline** is your always-on SSE connection — it powers global UI like
+notifications, presence indicators, or system alerts. It stays connected
+regardless of what happens in the content area.
+
+A **scoped stream** is a secondary SSE connection tied to a specific page or
+feature. When the user navigates away, the scoped stream is retired. If a
+scoped stream fails, the lifeline remains unaffected, and a fallback event
+is dispatched so the app can degrade gracefully.
+
+### When to use a scoped stream
+
+Use the **lifeline** for events that matter everywhere: notifications, auth
+status, system alerts. Use a **scoped stream** for events tied to a specific
+view: a chat room, a live dashboard, a collaborative editor. The scoped
+stream can be added when the user enters that view and retired when they
+leave.
+
+### Data attributes
+
+| Attribute | Values | Description |
+|---|---|---|
+| `data-tavern-role` | `"lifeline"` \| `"scoped"` | Marks the connection role. Only one lifeline is allowed per page. |
+| `data-tavern-scope` | string | Names a scoped stream for coordination (required when role is "scoped"). |
+
+### Stream lifecycle events
+
+Scoped streams move through a lifecycle: `warming` -> `ready` -> `active` -> `retired`.
+
+| Event | Dispatched on | `detail` | When |
+|---|---|---|---|
+| `tavern:stream-warming` | scoped element | `{ scope }` | Stream registered, waiting for SSE connection |
+| `tavern:stream-ready` | scoped element | `{ scope }` | SSE connection established (htmx:sseOpen) |
+| `tavern:stream-promoted` | scoped element | `{ scope }` | Stream promoted to active via `Tavern.promote()` |
+| `tavern:stream-retired` | scoped element | `{ scope }` | Stream retired via `Tavern.retire()` |
+| `tavern:stream-fallback` | lifeline element | `{ scope }` | Active scoped stream errored — app should fall back to lifeline |
+
+### Lifeline & stream API
+
+```javascript
+// Get the lifeline element (or null)
+Tavern.lifeline();
+
+// Get info about a scoped stream: { el, state } or null
+Tavern.stream("chat");
+
+// Get all registered streams
+Tavern.streams();
+
+// Promote a scoped stream to "active" (enables fallback-to-lifeline on error)
+Tavern.promote("chat");
+
+// Retire a scoped stream (removes it from the registry)
+Tavern.retire("chat");
+```
+
 ## Examples
 
 ### Tailwind reconnection overlay
@@ -219,6 +281,58 @@ and any other mechanism that injects HTML into the DOM.
      data-tavern-debug>
   <!-- Check the browser console for [tavern] messages -->
 </div>
+```
+
+### App shell with lifeline + scoped stream
+
+```html
+<!-- Persistent lifeline — stays connected across navigations -->
+<div sse-connect="/sse/global"
+     sse-swap="notification"
+     data-tavern-role="lifeline"
+     data-tavern-reconnecting-class="opacity-50">
+  <div data-tavern-status class="hidden">Reconnecting...</div>
+</div>
+
+<!-- Scoped stream — tied to the current page -->
+<div id="chat-stream"
+     sse-connect="/sse/chat/room1"
+     sse-swap="message"
+     data-tavern-role="scoped"
+     data-tavern-scope="chat">
+</div>
+```
+
+### Stream promotion on navigation
+
+```html
+<script>
+  // When the chat view loads, promote the scoped stream
+  document.getElementById("chat-stream")
+    .addEventListener("tavern:stream-ready", () => {
+      Tavern.promote("chat");
+    });
+
+  // When navigating away, retire the scoped stream
+  document.body.addEventListener("htmx:beforeSwap", (e) => {
+    if (Tavern.stream("chat")) {
+      Tavern.retire("chat");
+    }
+  });
+</script>
+```
+
+### Handling fallback to lifeline
+
+```html
+<script>
+  // Listen on the lifeline for scoped stream failures
+  document.querySelector("[data-tavern-role='lifeline']")
+    .addEventListener("tavern:stream-fallback", (e) => {
+      console.log("Scoped stream failed:", e.detail.scope);
+      // Show a degraded UI or retry logic
+    });
+</script>
 ```
 
 ## Development

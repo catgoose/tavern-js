@@ -33,6 +33,18 @@
   /** @type {boolean} Whether tavern has been initialized */
   var _initialized = false;
 
+  /** @type {HTMLElement|null} The lifeline element, if registered */
+  var _lifeline = null;
+
+  /**
+   * @typedef {Object} StreamEntry
+   * @property {HTMLElement} el - The scoped stream element
+   * @property {string} state - Current state: "warming", "ready", "active", or "retired"
+   */
+
+  /** @type {Object.<string, StreamEntry>} Map of scope name to stream entry */
+  var _streams = {};
+
   /**
    * @typedef {Object} TavernConfig
    * @property {string} [reconnectingClass] - CSS class applied during disconnection
@@ -53,6 +65,8 @@
       gapAction: el.getAttribute("data-tavern-gap-action"),
       gapBannerText: el.getAttribute("data-tavern-gap-banner-text"),
       debug: el.hasAttribute("data-tavern-debug"),
+      role: el.getAttribute("data-tavern-role"),
+      scope: el.getAttribute("data-tavern-scope"),
     };
   }
 
@@ -313,9 +327,56 @@
 
     debug(config, "binding to", el);
 
+    // Lifeline registration
+    if (config.role === "lifeline") {
+      if (_lifeline && document.body.contains(_lifeline)) {
+        console.warn("[tavern] duplicate lifeline ignored — only one allowed");
+      } else {
+        _lifeline = el;
+        debug(config, "registered lifeline", el);
+      }
+    }
+
+    // Scoped stream registration
+    if (config.role === "scoped" && config.scope) {
+      var existing = _streams[config.scope];
+      if (existing && existing.el !== el && document.body.contains(existing.el)) {
+        console.warn(
+          "[tavern] duplicate scope '" + config.scope + "' ignored — already owned by another element",
+        );
+      } else {
+        _streams[config.scope] = { el: el, state: "warming" };
+        debug(config, "registered scoped stream", config.scope);
+        el.dispatchEvent(
+          new CustomEvent("tavern:stream-warming", {
+            bubbles: true,
+            detail: { scope: config.scope },
+          }),
+        );
+      }
+    }
+
     // HTMX SSE lifecycle events
     el.addEventListener("htmx:sseError", function () {
       markDisconnected(el, config);
+
+      // Scoped stream fallback logic — only act if this element still owns the scope
+      if (config.role === "scoped" && config.scope) {
+        var entry = _streams[config.scope];
+        if (entry && entry.el === el) {
+          if (entry.state === "active" && _lifeline) {
+            _lifeline.dispatchEvent(
+              new CustomEvent("tavern:stream-fallback", {
+                bubbles: true,
+                detail: { scope: config.scope },
+              }),
+            );
+          }
+          if (entry.state !== "retired") {
+            entry.state = "warming";
+          }
+        }
+      }
     });
 
     el.addEventListener("htmx:sseOpen", function (e) {
@@ -328,6 +389,20 @@
         el.dispatchEvent(
           new CustomEvent("tavern:transport-open", { bubbles: true }),
         );
+      }
+
+      // Scoped stream transitions to "ready" on sseOpen — only if this element owns the scope
+      if (config.role === "scoped" && config.scope) {
+        var entry = _streams[config.scope];
+        if (entry && entry.el === el && entry.state === "warming") {
+          entry.state = "ready";
+          el.dispatchEvent(
+            new CustomEvent("tavern:stream-ready", {
+              bubbles: true,
+              detail: { scope: config.scope },
+            }),
+          );
+        }
       }
 
       // Attach control event listeners to the EventSource. HTMX creates a
@@ -378,6 +453,86 @@
   }
 
   /**
+   * Promotes a scoped stream to the "active" state.
+   * Dispatches `tavern:stream-promoted` on the stream element.
+   *
+   * @param {string} name - The scope name of the stream to promote
+   * @returns {boolean} True if the stream was promoted, false if not found or not promotable
+   */
+  function promote(name) {
+    var entry = _streams[name];
+    if (!entry) return false;
+    entry.state = "active";
+    entry.el.dispatchEvent(
+      new CustomEvent("tavern:stream-promoted", {
+        bubbles: true,
+        detail: { scope: name },
+      }),
+    );
+    return true;
+  }
+
+  /**
+   * Retires a scoped stream: sets state to "retired", dispatches
+   * `tavern:stream-retired`, and removes it from the streams registry.
+   *
+   * @param {string} name - The scope name of the stream to retire
+   * @returns {boolean} True if the stream was retired, false if not found
+   */
+  function retire(name) {
+    var entry = _streams[name];
+    if (!entry) return false;
+    entry.state = "retired";
+    entry.el.dispatchEvent(
+      new CustomEvent("tavern:stream-retired", {
+        bubbles: true,
+        detail: { scope: name },
+      }),
+    );
+    delete _streams[name];
+    return true;
+  }
+
+  /**
+   * Returns the lifeline element, or null if none registered.
+   *
+   * @returns {HTMLElement|null} The lifeline element
+   */
+  function getLifeline() {
+    if (_lifeline && !document.body.contains(_lifeline)) {
+      _lifeline = null;
+    }
+    return _lifeline;
+  }
+
+  /**
+   * Returns stream info for a scoped stream by name.
+   *
+   * @param {string} name - The scope name
+   * @returns {{ el: HTMLElement, state: string }|null} Stream info or null
+   */
+  function getStream(name) {
+    var entry = _streams[name];
+    if (!entry) return null;
+    return { el: entry.el, state: entry.state };
+  }
+
+  /**
+   * Returns a shallow copy of all registered scoped streams.
+   *
+   * @returns {Object.<string, { el: HTMLElement, state: string }>} All streams
+   */
+  function getStreams() {
+    var copy = {};
+    for (var key in _streams) {
+      if (_streams.hasOwnProperty(key)) {
+        copy[key] = { el: _streams[key].el, state: _streams[key].state };
+      }
+    }
+    return copy;
+  }
+
+  /**
    * Tears down tavern.js: disconnects the observer and resets state.
    * After calling destroy(), init() can be called again to re-initialize.
    */
@@ -386,6 +541,8 @@
       _observer.disconnect();
       _observer = null;
     }
+    _lifeline = null;
+    _streams = {};
     _initialized = false;
   }
 
@@ -421,6 +578,11 @@
       init: init,
       scanAndBind: scanAndBind,
       destroy: destroy,
+      lifeline: getLifeline,
+      stream: getStream,
+      streams: getStreams,
+      promote: promote,
+      retire: retire,
     };
   }
 
@@ -430,5 +592,10 @@
     exports.init = init;
     exports.scanAndBind = scanAndBind;
     exports.destroy = destroy;
+    exports.lifeline = getLifeline;
+    exports.stream = getStream;
+    exports.streams = getStreams;
+    exports.promote = promote;
+    exports.retire = retire;
   }
 })();
