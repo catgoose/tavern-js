@@ -566,6 +566,371 @@ describe("tavern.js", () => {
   });
 });
 
+describe("lifeline registration", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+  });
+
+  it("registers element with data-tavern-role=lifeline as the lifeline", () => {
+    const el = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(el);
+    expect(window.Tavern.lifeline()).toBe(el);
+  });
+
+  it("Tavern.lifeline() returns null when no lifeline registered", () => {
+    expect(window.Tavern.lifeline()).toBeNull();
+  });
+
+  it("only one lifeline allowed — second registration is ignored with console.warn", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const el1 = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(el1);
+
+    const el2 = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(el2);
+
+    expect(window.Tavern.lifeline()).toBe(el1);
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("duplicate lifeline");
+
+    warnSpy.mockRestore();
+  });
+
+  it("lifeline survives scoped stream disconnect/reconnect", () => {
+    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(lifeline);
+
+    const scoped = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(scoped);
+
+    // Scoped stream disconnects
+    scoped.dispatchEvent(new Event("htmx:sseError"));
+
+    // Lifeline is unaffected
+    expect(window.Tavern.lifeline()).toBe(lifeline);
+    expect(lifeline._tavernDisconnected).toBeFalsy();
+  });
+});
+
+describe("scoped stream lifecycle", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+  });
+
+  it("scoped stream starts in warming state on bind", () => {
+    const el = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el);
+
+    const info = window.Tavern.stream("chat");
+    expect(info).not.toBeNull();
+    expect(info.state).toBe("warming");
+    expect(info.el).toBe(el);
+  });
+
+  it("dispatches tavern:stream-warming on bind", () => {
+    const el = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:stream-warming", spy);
+
+    window.Tavern.bind(el);
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0].detail.scope).toBe("chat");
+  });
+
+  it("transitions to ready on htmx:sseOpen", () => {
+    const el = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el);
+
+    simulateSSEOpen(el);
+
+    expect(window.Tavern.stream("chat").state).toBe("ready");
+  });
+
+  it("dispatches tavern:stream-ready on sseOpen", () => {
+    const el = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el);
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:stream-ready", spy);
+
+    simulateSSEOpen(el);
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0].detail.scope).toBe("chat");
+  });
+
+  it("Tavern.stream(name) returns { el, state } or null", () => {
+    expect(window.Tavern.stream("nonexistent")).toBeNull();
+
+    const el = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el);
+
+    const info = window.Tavern.stream("chat");
+    expect(info.el).toBe(el);
+    expect(info.state).toBe("warming");
+  });
+
+  it("Tavern.streams() returns all registered streams", () => {
+    const el1 = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    const el2 = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "notifications",
+    });
+    window.Tavern.bind(el1);
+    window.Tavern.bind(el2);
+
+    const streams = window.Tavern.streams();
+    expect(Object.keys(streams)).toEqual(["chat", "notifications"]);
+    expect(streams.chat.el).toBe(el1);
+    expect(streams.notifications.el).toBe(el2);
+  });
+});
+
+describe("stream promotion and retirement", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+  });
+
+  it("Tavern.promote(name) sets state to active", () => {
+    const el = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el);
+    simulateSSEOpen(el);
+
+    window.Tavern.promote("chat");
+    expect(window.Tavern.stream("chat").state).toBe("active");
+  });
+
+  it("dispatches tavern:stream-promoted on promote", () => {
+    const el = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el);
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:stream-promoted", spy);
+
+    window.Tavern.promote("chat");
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0].detail.scope).toBe("chat");
+  });
+
+  it("Tavern.promote returns false for unknown stream", () => {
+    expect(window.Tavern.promote("nonexistent")).toBe(false);
+  });
+
+  it("Tavern.retire(name) sets state to retired", () => {
+    const el = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el);
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:stream-retired", spy);
+
+    window.Tavern.retire("chat");
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0].detail.scope).toBe("chat");
+  });
+
+  it("retired stream removed from Tavern.streams()", () => {
+    const el = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(el);
+
+    window.Tavern.retire("chat");
+    expect(window.Tavern.stream("chat")).toBeNull();
+    expect(Object.keys(window.Tavern.streams())).toEqual([]);
+  });
+
+  it("Tavern.retire returns false for unknown stream", () => {
+    expect(window.Tavern.retire("nonexistent")).toBe(false);
+  });
+});
+
+describe("scoped stream fallback", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+  });
+
+  it("dispatches tavern:stream-fallback on lifeline when active scoped stream errors", () => {
+    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(lifeline);
+
+    const scoped = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(scoped);
+    simulateSSEOpen(scoped);
+    window.Tavern.promote("chat");
+
+    const spy = vi.fn();
+    lifeline.addEventListener("tavern:stream-fallback", spy);
+
+    scoped.dispatchEvent(new Event("htmx:sseError"));
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0].detail.scope).toBe("chat");
+  });
+
+  it("scoped stream goes back to warming on error", () => {
+    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(lifeline);
+
+    const scoped = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(scoped);
+    simulateSSEOpen(scoped);
+    window.Tavern.promote("chat");
+
+    scoped.dispatchEvent(new Event("htmx:sseError"));
+
+    expect(window.Tavern.stream("chat").state).toBe("warming");
+  });
+
+  it("does not dispatch fallback when scoped stream is not active", () => {
+    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(lifeline);
+
+    const scoped = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(scoped);
+    simulateSSEOpen(scoped);
+    // Stream is "ready" but not "active"
+
+    const spy = vi.fn();
+    lifeline.addEventListener("tavern:stream-fallback", spy);
+
+    scoped.dispatchEvent(new Event("htmx:sseError"));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("lifeline connection state is unaffected by scoped stream errors", () => {
+    const lifeline = createSSEElement({
+      "data-tavern-role": "lifeline",
+      "data-tavern-reconnecting-class": "opacity-50",
+    });
+    window.Tavern.bind(lifeline);
+
+    const scoped = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(scoped);
+    simulateSSEOpen(scoped);
+    window.Tavern.promote("chat");
+
+    scoped.dispatchEvent(new Event("htmx:sseError"));
+
+    // Lifeline should NOT be marked disconnected
+    expect(lifeline._tavernDisconnected).toBeFalsy();
+    expect(lifeline.classList.contains("opacity-50")).toBe(false);
+  });
+});
+
+describe("shell persistence during navigation", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+  });
+
+  it("lifeline element stays bound when sibling content is replaced", () => {
+    const shell = document.createElement("div");
+    document.body.appendChild(shell);
+
+    const lifeline = document.createElement("div");
+    lifeline.setAttribute("sse-connect", "/sse/global");
+    lifeline.setAttribute("data-tavern-role", "lifeline");
+    shell.appendChild(lifeline);
+    window.Tavern.bind(lifeline);
+
+    const content = document.createElement("div");
+    content.id = "content";
+    shell.appendChild(content);
+
+    // Replace sibling content
+    shell.removeChild(content);
+    const newContent = document.createElement("div");
+    newContent.id = "content-new";
+    shell.appendChild(newContent);
+
+    // Lifeline still registered
+    expect(window.Tavern.lifeline()).toBe(lifeline);
+    expect(lifeline._tavernBound).toBe(true);
+  });
+
+  it("scoped stream can be added/removed without affecting lifeline", () => {
+    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(lifeline);
+
+    const scoped = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(scoped);
+
+    // Retire the scoped stream
+    window.Tavern.retire("chat");
+
+    // Lifeline unaffected
+    expect(window.Tavern.lifeline()).toBe(lifeline);
+    expect(window.Tavern.stream("chat")).toBeNull();
+  });
+
+  it("destroy() clears lifeline and streams state", () => {
+    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    window.Tavern.bind(lifeline);
+
+    const scoped = createSSEElement({
+      "data-tavern-role": "scoped",
+      "data-tavern-scope": "chat",
+    });
+    window.Tavern.bind(scoped);
+
+    window.Tavern.destroy();
+
+    expect(window.Tavern.lifeline()).toBeNull();
+    expect(Object.keys(window.Tavern.streams())).toEqual([]);
+  });
+});
+
 describe("non-browser environment", () => {
   it("does not crash when document is undefined", async () => {
     const { execSync } = await import("node:child_process");
