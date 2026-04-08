@@ -55,6 +55,44 @@ function createStatusElement(parent, text = "Reconnecting...") {
   return status;
 }
 
+/**
+ * Creates a mock EventSource-like object that supports addEventListener,
+ * removeEventListener, and dispatching events.
+ *
+ * @returns {EventTarget & { _listeners: Object }}
+ */
+function createMockEventSource() {
+  const target = new EventTarget();
+  return target;
+}
+
+/**
+ * Simulates htmx:sseOpen on an element with a mock EventSource.
+ *
+ * @param {HTMLElement} el - The SSE-connected element
+ * @param {EventTarget} [source] - Mock EventSource (created if not provided)
+ * @returns {EventTarget} The mock EventSource
+ */
+function simulateSSEOpen(el, source) {
+  if (!source) source = createMockEventSource();
+  el.dispatchEvent(
+    new CustomEvent("htmx:sseOpen", { detail: { source: source } }),
+  );
+  return source;
+}
+
+/**
+ * Dispatches a named SSE event on a mock EventSource.
+ *
+ * @param {EventTarget} source - Mock EventSource
+ * @param {string} eventName - SSE event type name
+ * @param {string} [data] - Event data payload
+ */
+function fireSSEEvent(source, eventName, data) {
+  const evt = new MessageEvent(eventName, { data: data || "" });
+  source.dispatchEvent(evt);
+}
+
 describe("tavern.js", () => {
   beforeEach(async () => {
     document.body.innerHTML = "";
@@ -142,18 +180,22 @@ describe("tavern.js", () => {
   });
 
   describe("reconnection", () => {
-    it("removes reconnecting class on tavern-reconnected", () => {
+    it("removes reconnecting class on tavern-reconnected from EventSource", () => {
       const el = createSSEElement({
         "data-tavern-reconnecting-class": "opacity-50",
       });
       window.Tavern.bind(el);
 
-      // Disconnect first
+      // Initial connection
+      const source = simulateSSEOpen(el);
+
+      // Disconnect
       el.dispatchEvent(new Event("htmx:sseError"));
       expect(el.classList.contains("opacity-50")).toBe(true);
 
-      // Reconnect
-      el.dispatchEvent(new Event("tavern-reconnected"));
+      // Reconnect — new EventSource fires tavern-reconnected
+      const source2 = simulateSSEOpen(el);
+      fireSSEEvent(source2, "tavern-reconnected");
       expect(el.classList.contains("opacity-50")).toBe(false);
     });
 
@@ -162,10 +204,13 @@ describe("tavern.js", () => {
       const status = createStatusElement(el);
       window.Tavern.bind(el);
 
+      const source = simulateSSEOpen(el);
+
       el.dispatchEvent(new Event("htmx:sseError"));
       expect(status.classList.contains("hidden")).toBe(false);
 
-      el.dispatchEvent(new Event("tavern-reconnected"));
+      const source2 = simulateSSEOpen(el);
+      fireSSEEvent(source2, "tavern-reconnected");
       expect(status.classList.contains("hidden")).toBe(true);
       expect(status.hasAttribute("hidden")).toBe(true);
     });
@@ -177,9 +222,13 @@ describe("tavern.js", () => {
       const spy = vi.fn();
       el.addEventListener("tavern:reconnected", spy);
 
+      const source = simulateSSEOpen(el);
+
       // Must disconnect first
       el.dispatchEvent(new Event("htmx:sseError"));
-      el.dispatchEvent(new Event("tavern-reconnected"));
+
+      const source2 = simulateSSEOpen(el);
+      fireSSEEvent(source2, "tavern-reconnected");
       expect(spy).toHaveBeenCalledOnce();
     });
 
@@ -189,11 +238,13 @@ describe("tavern.js", () => {
       });
       window.Tavern.bind(el);
 
+      const source = simulateSSEOpen(el);
+
       el.dispatchEvent(new Event("htmx:sseError"));
       expect(el.classList.contains("opacity-50")).toBe(true);
 
       // Transport reopen should NOT clear disconnected state
-      el.dispatchEvent(new Event("htmx:sseOpen"));
+      simulateSSEOpen(el);
       expect(el.classList.contains("opacity-50")).toBe(true);
       expect(el._tavernDisconnected).toBe(true);
     });
@@ -204,15 +255,17 @@ describe("tavern.js", () => {
       });
       window.Tavern.bind(el);
 
+      const source = simulateSSEOpen(el);
+
       el.dispatchEvent(new Event("htmx:sseError"));
       expect(el.classList.contains("opacity-50")).toBe(true);
 
       // Transport reopen — still disconnected
-      el.dispatchEvent(new Event("htmx:sseOpen"));
+      const source2 = simulateSSEOpen(el);
       expect(el.classList.contains("opacity-50")).toBe(true);
 
       // Server confirms recovery — now reconnected
-      el.dispatchEvent(new Event("tavern-reconnected"));
+      fireSSEEvent(source2, "tavern-reconnected");
       expect(el.classList.contains("opacity-50")).toBe(false);
       expect(el._tavernDisconnected).toBe(false);
     });
@@ -226,8 +279,9 @@ describe("tavern.js", () => {
       el.addEventListener("tavern:transport-open", transportSpy);
       el.addEventListener("tavern:reconnected", reconnectedSpy);
 
+      const source = simulateSSEOpen(el);
       el.dispatchEvent(new Event("htmx:sseError"));
-      el.dispatchEvent(new Event("htmx:sseOpen"));
+      simulateSSEOpen(el);
 
       // Transport event fires, but reconnected does not
       expect(transportSpy).toHaveBeenCalledOnce();
@@ -241,7 +295,7 @@ describe("tavern.js", () => {
       const spy = vi.fn();
       el.addEventListener("tavern:transport-open", spy);
 
-      el.dispatchEvent(new Event("htmx:sseOpen"));
+      simulateSSEOpen(el);
       expect(spy).not.toHaveBeenCalled();
     });
 
@@ -252,8 +306,62 @@ describe("tavern.js", () => {
       const spy = vi.fn();
       el.addEventListener("tavern:reconnected", spy);
 
-      el.dispatchEvent(new Event("htmx:sseOpen"));
+      simulateSSEOpen(el);
       expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("EventSource listener dedupe", () => {
+    it("does not attach duplicate listeners for the same source", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const source = createMockEventSource();
+      const spy = vi.fn();
+
+      // Open twice with the same source
+      simulateSSEOpen(el, source);
+      simulateSSEOpen(el, source);
+
+      el.dispatchEvent(new Event("htmx:sseError"));
+
+      el.addEventListener("tavern:reconnected", spy);
+      fireSSEEvent(source, "tavern-reconnected");
+      expect(spy).toHaveBeenCalledOnce();
+    });
+
+    it("detaches listeners from old source when source changes", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const source1 = simulateSSEOpen(el);
+
+      el.dispatchEvent(new Event("htmx:sseError"));
+
+      // New source on reconnect
+      const source2 = simulateSSEOpen(el);
+
+      const spy = vi.fn();
+      el.addEventListener("tavern:reconnected", spy);
+
+      // Event on OLD source should NOT trigger handler
+      fireSSEEvent(source1, "tavern-reconnected");
+      expect(spy).not.toHaveBeenCalled();
+
+      // Event on NEW source should trigger handler
+      fireSSEEvent(source2, "tavern-reconnected");
+      expect(spy).toHaveBeenCalledOnce();
+    });
+
+    it("tracks current source on the element", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const source1 = simulateSSEOpen(el);
+      expect(el._tavernControlSource).toBe(source1);
+
+      const source2 = simulateSSEOpen(el);
+      expect(el._tavernControlSource).toBe(source2);
     });
   });
 
@@ -265,11 +373,8 @@ describe("tavern.js", () => {
       const spy = vi.fn();
       el.addEventListener("tavern:replay-gap", spy);
 
-      el.dispatchEvent(
-        new CustomEvent("tavern-replay-gap", {
-          detail: { data: "evt-42" },
-        }),
-      );
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-gap", "evt-42");
       expect(spy).toHaveBeenCalledOnce();
       expect(spy.mock.calls[0][0].detail.lastEventId).toBe("evt-42");
     });
@@ -284,11 +389,8 @@ describe("tavern.js", () => {
         writable: true,
       });
 
-      el.dispatchEvent(
-        new CustomEvent("tavern-replay-gap", {
-          detail: { data: "evt-42" },
-        }),
-      );
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-gap", "evt-42");
       expect(reloadSpy).toHaveBeenCalledOnce();
     });
 
@@ -296,11 +398,8 @@ describe("tavern.js", () => {
       const el = createSSEElement({ "data-tavern-gap-action": "banner" });
       window.Tavern.bind(el);
 
-      el.dispatchEvent(
-        new CustomEvent("tavern-replay-gap", {
-          detail: { data: "evt-42" },
-        }),
-      );
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-gap", "evt-42");
 
       const banner = el.querySelector("[data-tavern-gap-banner]");
       expect(banner).not.toBeNull();
@@ -316,11 +415,8 @@ describe("tavern.js", () => {
       });
       window.Tavern.bind(el);
 
-      el.dispatchEvent(
-        new CustomEvent("tavern-replay-gap", {
-          detail: { data: "" },
-        }),
-      );
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-gap", "");
 
       const banner = el.querySelector("[data-tavern-gap-banner]");
       expect(banner.textContent).toBe("Updates missed!");
@@ -330,9 +426,8 @@ describe("tavern.js", () => {
       const el = createSSEElement({ "data-tavern-gap-action": "banner" });
       window.Tavern.bind(el);
 
-      el.dispatchEvent(
-        new CustomEvent("tavern-replay-gap", { detail: { data: "" } }),
-      );
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-gap", "");
 
       const banner = el.querySelector("[data-tavern-gap-banner]");
       expect(banner.tagName).toBe("BUTTON");
@@ -343,12 +438,9 @@ describe("tavern.js", () => {
       const el = createSSEElement({ "data-tavern-gap-action": "banner" });
       window.Tavern.bind(el);
 
-      el.dispatchEvent(
-        new CustomEvent("tavern-replay-gap", { detail: { data: "" } }),
-      );
-      el.dispatchEvent(
-        new CustomEvent("tavern-replay-gap", { detail: { data: "" } }),
-      );
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-gap", "");
+      fireSSEEvent(source, "tavern-replay-gap", "");
 
       const banners = el.querySelectorAll("[data-tavern-gap-banner]");
       expect(banners.length).toBe(1);
@@ -363,11 +455,8 @@ describe("tavern.js", () => {
       const spy = vi.fn();
       el.addEventListener("my-custom-refresh", spy);
 
-      el.dispatchEvent(
-        new CustomEvent("tavern-replay-gap", {
-          detail: { data: "evt-42" },
-        }),
-      );
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-gap", "evt-42");
       expect(spy).toHaveBeenCalledOnce();
     });
   });
@@ -384,11 +473,8 @@ describe("tavern.js", () => {
         added: ["chat.room1"],
         removed: [],
       });
-      el.dispatchEvent(
-        new CustomEvent("tavern-topics-changed", {
-          detail: { data: payload },
-        }),
-      );
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-topics-changed", payload);
 
       expect(spy).toHaveBeenCalledOnce();
       expect(spy.mock.calls[0][0].detail.added).toEqual(["chat.room1"]);
@@ -401,11 +487,8 @@ describe("tavern.js", () => {
       const spy = vi.fn();
       el.addEventListener("tavern:topics-changed", spy);
 
-      el.dispatchEvent(
-        new CustomEvent("tavern-topics-changed", {
-          detail: { data: "not json" },
-        }),
-      );
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-topics-changed", "not json");
 
       expect(spy).toHaveBeenCalledOnce();
       expect(spy.mock.calls[0][0].detail.raw).toBe("not json");
