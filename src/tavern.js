@@ -240,8 +240,63 @@
   }
 
   /**
+   * Attaches control event listeners directly to an EventSource instance.
+   * Deduplicates by tracking the bound source on the element — if the same
+   * source is passed again, this is a no-op. When the source changes (HTMX
+   * creates a new EventSource on reconnect), old listeners are removed first.
+   *
+   * @param {HTMLElement} el - The SSE-connected element
+   * @param {TavernConfig} config - Current configuration
+   * @param {EventSource} source - The EventSource to listen on
+   */
+  function bindControlEvents(el, config, source) {
+    if (source === el._tavernControlSource) return;
+
+    // Remove listeners from the previous source, if any.
+    if (el._tavernControlSource) {
+      debug(config, "detaching control listeners from old EventSource");
+      el._tavernControlSource.removeEventListener(
+        EVT_RECONNECTED,
+        el._tavernOnReconnected,
+      );
+      el._tavernControlSource.removeEventListener(
+        EVT_REPLAY_GAP,
+        el._tavernOnReplayGap,
+      );
+      el._tavernControlSource.removeEventListener(
+        EVT_TOPICS_CHANGED,
+        el._tavernOnTopicsChanged,
+      );
+    }
+
+    // Create stable references so they can be removed later.
+    el._tavernOnReconnected = function () {
+      markReconnected(el, config);
+    };
+    el._tavernOnReplayGap = function (e) {
+      handleReplayGap(el, config, e.data || "");
+    };
+    el._tavernOnTopicsChanged = function (e) {
+      handleTopicsChanged(el, config, e.data || "");
+    };
+
+    source.addEventListener(EVT_RECONNECTED, el._tavernOnReconnected);
+    source.addEventListener(EVT_REPLAY_GAP, el._tavernOnReplayGap);
+    source.addEventListener(EVT_TOPICS_CHANGED, el._tavernOnTopicsChanged);
+
+    el._tavernControlSource = source;
+
+    debug(config, "attached control listeners to EventSource", source);
+  }
+
+  /**
    * Binds tavern event listeners to an SSE-connected element.
    * Idempotent — will not bind twice to the same element.
+   *
+   * Control events (tavern-reconnected, tavern-replay-gap, tavern-topics-changed)
+   * are listened on the EventSource directly, not as DOM events on the element.
+   * The HTMX SSE extension does not dispatch raw SSE event names as DOM events,
+   * so attaching to the EventSource via htmx:sseOpen is the only reliable path.
    *
    * @param {HTMLElement} el - An element with sse-connect attribute
    */
@@ -258,7 +313,7 @@
       markDisconnected(el, config);
     });
 
-    el.addEventListener("htmx:sseOpen", function () {
+    el.addEventListener("htmx:sseOpen", function (e) {
       // Transport reopened — do NOT call markReconnected() here.
       // The server's tavern-reconnected control event is the authoritative
       // signal that recovery (replay, gap handling) is complete.
@@ -269,21 +324,14 @@
           new CustomEvent("tavern:transport-open", { bubbles: true }),
         );
       }
-    });
 
-    // Tavern control events (dispatched by HTMX SSE extension as DOM events)
-    el.addEventListener(EVT_RECONNECTED, function () {
-      markReconnected(el, config);
-    });
-
-    el.addEventListener(EVT_REPLAY_GAP, function (e) {
-      var lastEventId = e.detail ? e.detail.data : "";
-      handleReplayGap(el, config, lastEventId);
-    });
-
-    el.addEventListener(EVT_TOPICS_CHANGED, function (e) {
-      var data = e.detail ? e.detail.data : "";
-      handleTopicsChanged(el, config, data);
+      // Attach control event listeners to the EventSource. HTMX creates a
+      // new EventSource on each reconnect, so we must re-attach each time.
+      // bindControlEvents deduplicates by source identity.
+      var source = e.detail && e.detail.source;
+      if (source) {
+        bindControlEvents(el, config, source);
+      }
     });
   }
 
