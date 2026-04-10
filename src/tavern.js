@@ -562,6 +562,49 @@
     return { observer: _observer, bind: bind, destroy: destroy };
   }
 
+  /**
+   * Sends a command POST to an application endpoint.
+   *
+   * Designed for hot SSE-driven DOM regions where node-bound handlers
+   * (hx-post, click listeners) are unreliable due to rapid DOM replacement.
+   * The server processes the command and publishes any UI updates via SSE.
+   *
+   * @param {string} url - The endpoint to POST to
+   * @param {Object} [body={}] - JSON-serializable request body
+   * @param {Object} [options] - Optional fetch overrides
+   * @param {Object} [options.headers] - Additional headers (merged with Content-Type)
+   * @param {AbortSignal} [options.signal] - AbortSignal for cancellation
+   * @param {string} [options.credentials] - Fetch credentials mode
+   * @returns {Promise<Response>} Resolves on 2xx, rejects on error or non-2xx
+   */
+  function command(url, body, options) {
+    var opts = options || {};
+    var headers = { "Content-Type": "application/json" };
+    if (opts.headers) {
+      for (var key in opts.headers) {
+        if (opts.headers.hasOwnProperty(key)) {
+          headers[key] = opts.headers[key];
+        }
+      }
+    }
+    var fetchOpts = {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(body || {}),
+    };
+    if (opts.signal) fetchOpts.signal = opts.signal;
+    if (opts.credentials) fetchOpts.credentials = opts.credentials;
+
+    return fetch(url, fetchOpts).then(function (response) {
+      if (!response.ok) {
+        throw new Error(
+          "Tavern.command: " + response.status + " " + response.statusText,
+        );
+      }
+      return response;
+    });
+  }
+
   // Auto-initialize when the DOM is ready
   if (typeof document !== "undefined") {
     if (document.readyState === "loading") {
@@ -583,6 +626,7 @@
       streams: getStreams,
       promote: promote,
       retire: retire,
+      command: command,
     };
   }
 
@@ -597,5 +641,6 @@
     exports.streams = getStreams;
     exports.promote = promote;
     exports.retire = retire;
+    exports.command = command;
   }
 })();

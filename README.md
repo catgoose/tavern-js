@@ -131,6 +131,66 @@ document.addEventListener("tavern:replay-gap", (e) => {
 });
 ```
 
+## Commands
+
+Some Tavern-driven interfaces update so rapidly over SSE that interactive
+elements inside the update region can be replaced while the user is clicking
+them. In these "hot" DOM regions, node-bound actions like `hx-post` or
+element-scoped click listeners become unreliable because the target element
+may be gone before the browser dispatches the event.
+
+`Tavern.command()` provides a stable way to POST intent to the server from
+these volatile regions. The server processes the command and publishes any
+resulting UI update back over SSE as usual.
+
+**When to use:** Use `Tavern.command()` when interactions target elements
+inside high-frequency SSE regions. Normal forms and `hx-post` remain
+preferred outside hotspots.
+
+### API
+
+```javascript
+Tavern.command(url, body?, options?)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `url` | `string` | — | The endpoint to POST to |
+| `body` | `Object` | `{}` | JSON-serializable request body |
+| `options.headers` | `Object` | — | Additional headers (merged with `Content-Type: application/json`) |
+| `options.signal` | `AbortSignal` | — | AbortSignal for cancellation |
+| `options.credentials` | `string` | — | Fetch credentials mode |
+
+Returns a `Promise<Response>` that resolves on 2xx and rejects on non-2xx,
+network failure, or aborted request.
+
+### Example
+
+```html
+<!-- The list re-renders rapidly via SSE — buttons inside it are ephemeral -->
+<div id="task-list"
+     sse-connect="/sse/tasks"
+     sse-swap="tasks">
+  <!-- Rendered by SSE: <button data-action="complete" data-id="42">Done</button> -->
+</div>
+
+<script>
+  // Delegate clicks on a stable parent — the buttons themselves are volatile
+  document.getElementById("task-list").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-action='complete']");
+    if (!btn) return;
+    Tavern.command("/tasks/complete", { id: btn.dataset.id });
+  });
+</script>
+```
+
+The server answers with ordinary HTTP success/error. The UI update arrives
+separately via SSE — `Tavern.command()` does not assume the response body
+contains UI state.
+
+> **Note:** `Tavern.command()` is an escape hatch for hotspot interactions,
+> not a replacement for normal forms or `hx-post`.
+
 ## Programmatic API
 
 tavern.js auto-initializes when the DOM is ready — you do not need to call
@@ -151,6 +211,9 @@ Tavern.init();
 
 // Tear down: disconnect observer and reset state
 Tavern.destroy();
+
+// Send a command POST to an application endpoint
+Tavern.command("/endpoint", { key: "value" }, { credentials: "include" });
 ```
 
 ## Dynamic Elements
