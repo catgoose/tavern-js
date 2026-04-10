@@ -10,7 +10,7 @@
  * - tavern-topics-changed — fires when subscription topics change at runtime
  *
  * @module tavern
- * @version 0.0.13
+ * @version 0.0.14
  * @license MIT
  * @see https://github.com/catgoose/tavern
  */
