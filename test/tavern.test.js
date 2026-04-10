@@ -23,7 +23,7 @@ async function loadTavern() {
 }
 
 /**
- * Creates an element with sse-connect and optional data-tavern-* attributes.
+ * Creates an element with sse-connect and optional tavern-* attributes.
  *
  * @param {Object} [attrs] - Additional attributes to set
  * @returns {HTMLElement}
@@ -47,7 +47,7 @@ function createSSEElement(attrs = {}) {
  */
 function createStatusElement(parent, text = "Reconnecting...") {
   const status = document.createElement("div");
-  status.setAttribute("data-tavern-status", "");
+  status.setAttribute("tavern-status", "");
   status.classList.add("hidden");
   status.setAttribute("hidden", "");
   status.textContent = text;
@@ -124,7 +124,7 @@ describe("tavern.js", () => {
   describe("disconnection detection", () => {
     it("applies reconnecting class on htmx:sseError", () => {
       const el = createSSEElement({
-        "data-tavern-reconnecting-class": "opacity-50",
+        "tavern-reconnecting-class": "opacity-50",
       });
       window.Tavern.bind(el);
 
@@ -134,7 +134,7 @@ describe("tavern.js", () => {
 
     it("applies multiple reconnecting classes", () => {
       const el = createSSEElement({
-        "data-tavern-reconnecting-class": "opacity-50 blur-sm",
+        "tavern-reconnecting-class": "opacity-50 blur-sm",
       });
       window.Tavern.bind(el);
 
@@ -145,7 +145,7 @@ describe("tavern.js", () => {
 
     it("shows status elements on disconnect", () => {
       const el = createSSEElement({
-        "data-tavern-reconnecting-class": "opacity-50",
+        "tavern-reconnecting-class": "opacity-50",
       });
       const status = createStatusElement(el);
       window.Tavern.bind(el);
@@ -182,7 +182,7 @@ describe("tavern.js", () => {
   describe("reconnection", () => {
     it("removes reconnecting class on tavern-reconnected from EventSource", () => {
       const el = createSSEElement({
-        "data-tavern-reconnecting-class": "opacity-50",
+        "tavern-reconnecting-class": "opacity-50",
       });
       window.Tavern.bind(el);
 
@@ -234,7 +234,7 @@ describe("tavern.js", () => {
 
     it("does not clear disconnected state on htmx:sseOpen alone", () => {
       const el = createSSEElement({
-        "data-tavern-reconnecting-class": "opacity-50",
+        "tavern-reconnecting-class": "opacity-50",
       });
       window.Tavern.bind(el);
 
@@ -251,7 +251,7 @@ describe("tavern.js", () => {
 
     it("clears disconnected state only on server tavern-reconnected event", () => {
       const el = createSSEElement({
-        "data-tavern-reconnecting-class": "opacity-50",
+        "tavern-reconnecting-class": "opacity-50",
       });
       window.Tavern.bind(el);
 
@@ -380,7 +380,7 @@ describe("tavern.js", () => {
     });
 
     it("reloads page when gap action is reload", () => {
-      const el = createSSEElement({ "data-tavern-gap-action": "reload" });
+      const el = createSSEElement({ "tavern-gap-action": "reload" });
       window.Tavern.bind(el);
 
       const reloadSpy = vi.fn();
@@ -395,13 +395,13 @@ describe("tavern.js", () => {
     });
 
     it("shows banner when gap action is banner", () => {
-      const el = createSSEElement({ "data-tavern-gap-action": "banner" });
+      const el = createSSEElement({ "tavern-gap-action": "banner" });
       window.Tavern.bind(el);
 
       const source = simulateSSEOpen(el);
       fireSSEEvent(source, "tavern-replay-gap", "evt-42");
 
-      const banner = el.querySelector("[data-tavern-gap-banner]");
+      const banner = el.querySelector("[tavern-gap-banner]");
       expect(banner).not.toBeNull();
 
       const alert = banner.querySelector("[role='alert']");
@@ -417,26 +417,26 @@ describe("tavern.js", () => {
 
     it("uses custom banner text", () => {
       const el = createSSEElement({
-        "data-tavern-gap-action": "banner",
-        "data-tavern-gap-banner-text": "Updates missed!",
+        "tavern-gap-action": "banner",
+        "tavern-gap-banner-text": "Updates missed!",
       });
       window.Tavern.bind(el);
 
       const source = simulateSSEOpen(el);
       fireSSEEvent(source, "tavern-replay-gap", "");
 
-      const alert = el.querySelector("[data-tavern-gap-banner] [role='alert']");
+      const alert = el.querySelector("[tavern-gap-banner] [role='alert']");
       expect(alert.textContent).toBe("Updates missed!");
     });
 
     it("banner separates alert region from interactive button", () => {
-      const el = createSSEElement({ "data-tavern-gap-action": "banner" });
+      const el = createSSEElement({ "tavern-gap-action": "banner" });
       window.Tavern.bind(el);
 
       const source = simulateSSEOpen(el);
       fireSSEEvent(source, "tavern-replay-gap", "");
 
-      const banner = el.querySelector("[data-tavern-gap-banner]");
+      const banner = el.querySelector("[tavern-gap-banner]");
       // Wrapper is a div, not a button
       expect(banner.tagName).toBe("DIV");
 
@@ -450,20 +450,20 @@ describe("tavern.js", () => {
     });
 
     it("does not create duplicate banners", () => {
-      const el = createSSEElement({ "data-tavern-gap-action": "banner" });
+      const el = createSSEElement({ "tavern-gap-action": "banner" });
       window.Tavern.bind(el);
 
       const source = simulateSSEOpen(el);
       fireSSEEvent(source, "tavern-replay-gap", "");
       fireSSEEvent(source, "tavern-replay-gap", "");
 
-      const banners = el.querySelectorAll("[data-tavern-gap-banner]");
+      const banners = el.querySelectorAll("[tavern-gap-banner]");
       expect(banners.length).toBe(1);
     });
 
     it("dispatches custom event for unknown gap action", () => {
       const el = createSSEElement({
-        "data-tavern-gap-action": "my-custom-refresh",
+        "tavern-gap-action": "my-custom-refresh",
       });
       window.Tavern.bind(el);
 
@@ -540,7 +540,7 @@ describe("tavern.js", () => {
 
   describe("debug mode", () => {
     it("logs when debug attribute is present", () => {
-      const el = createSSEElement({ "data-tavern-debug": "" });
+      const el = createSSEElement({ "tavern-debug": "" });
       window.Tavern.bind(el);
 
       const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
@@ -572,8 +572,8 @@ describe("lifeline registration", () => {
     await loadTavern();
   });
 
-  it("registers element with data-tavern-role=lifeline as the lifeline", () => {
-    const el = createSSEElement({ "data-tavern-role": "lifeline" });
+  it("registers element with tavern-role=lifeline as the lifeline", () => {
+    const el = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(el);
     expect(window.Tavern.lifeline()).toBe(el);
   });
@@ -585,10 +585,10 @@ describe("lifeline registration", () => {
   it("only one lifeline allowed — second registration is ignored with console.warn", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const el1 = createSSEElement({ "data-tavern-role": "lifeline" });
+    const el1 = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(el1);
 
-    const el2 = createSSEElement({ "data-tavern-role": "lifeline" });
+    const el2 = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(el2);
 
     expect(window.Tavern.lifeline()).toBe(el1);
@@ -599,7 +599,7 @@ describe("lifeline registration", () => {
   });
 
   it("allows new lifeline after previous lifeline is removed from DOM", () => {
-    const el1 = createSSEElement({ "data-tavern-role": "lifeline" });
+    const el1 = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(el1);
     expect(window.Tavern.lifeline()).toBe(el1);
 
@@ -607,13 +607,13 @@ describe("lifeline registration", () => {
     el1.remove();
 
     // New lifeline should be accepted
-    const el2 = createSSEElement({ "data-tavern-role": "lifeline" });
+    const el2 = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(el2);
     expect(window.Tavern.lifeline()).toBe(el2);
   });
 
   it("Tavern.lifeline() returns null when lifeline element is detached", () => {
-    const el = createSSEElement({ "data-tavern-role": "lifeline" });
+    const el = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(el);
     expect(window.Tavern.lifeline()).toBe(el);
 
@@ -622,12 +622,12 @@ describe("lifeline registration", () => {
   });
 
   it("lifeline survives scoped stream disconnect/reconnect", () => {
-    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    const lifeline = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(lifeline);
 
     const scoped = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(scoped);
 
@@ -648,8 +648,8 @@ describe("scoped stream lifecycle", () => {
 
   it("scoped stream starts in warming state on bind", () => {
     const el = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el);
 
@@ -661,8 +661,8 @@ describe("scoped stream lifecycle", () => {
 
   it("dispatches tavern:stream-warming on bind", () => {
     const el = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
 
     const spy = vi.fn();
@@ -675,8 +675,8 @@ describe("scoped stream lifecycle", () => {
 
   it("transitions to ready on htmx:sseOpen", () => {
     const el = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el);
 
@@ -687,8 +687,8 @@ describe("scoped stream lifecycle", () => {
 
   it("dispatches tavern:stream-ready on sseOpen", () => {
     const el = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el);
 
@@ -704,8 +704,8 @@ describe("scoped stream lifecycle", () => {
     expect(window.Tavern.stream("nonexistent")).toBeNull();
 
     const el = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el);
 
@@ -718,14 +718,14 @@ describe("scoped stream lifecycle", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const el1 = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el1);
 
     const el2 = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el2);
 
@@ -738,16 +738,16 @@ describe("scoped stream lifecycle", () => {
 
   it("allows scope takeover when previous owner is removed from DOM", () => {
     const el1 = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el1);
 
     el1.remove();
 
     const el2 = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el2);
 
@@ -755,12 +755,12 @@ describe("scoped stream lifecycle", () => {
   });
 
   it("old element error does not trigger fallback after scope takeover", () => {
-    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    const lifeline = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(lifeline);
 
     const el1 = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el1);
     simulateSSEOpen(el1);
@@ -770,8 +770,8 @@ describe("scoped stream lifecycle", () => {
     el1.remove();
 
     const el2 = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el2);
     simulateSSEOpen(el2);
@@ -791,12 +791,12 @@ describe("scoped stream lifecycle", () => {
 
   it("Tavern.streams() returns all registered streams", () => {
     const el1 = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     const el2 = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "notifications",
+      "tavern-role": "scoped",
+      "tavern-scope": "notifications",
     });
     window.Tavern.bind(el1);
     window.Tavern.bind(el2);
@@ -816,8 +816,8 @@ describe("stream promotion and retirement", () => {
 
   it("Tavern.promote(name) sets state to active", () => {
     const el = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el);
     simulateSSEOpen(el);
@@ -828,8 +828,8 @@ describe("stream promotion and retirement", () => {
 
   it("dispatches tavern:stream-promoted on promote", () => {
     const el = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el);
 
@@ -847,8 +847,8 @@ describe("stream promotion and retirement", () => {
 
   it("Tavern.retire(name) sets state to retired", () => {
     const el = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el);
 
@@ -862,8 +862,8 @@ describe("stream promotion and retirement", () => {
 
   it("retired stream removed from Tavern.streams()", () => {
     const el = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(el);
 
@@ -884,12 +884,12 @@ describe("scoped stream fallback", () => {
   });
 
   it("dispatches tavern:stream-fallback on lifeline when active scoped stream errors", () => {
-    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    const lifeline = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(lifeline);
 
     const scoped = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(scoped);
     simulateSSEOpen(scoped);
@@ -905,12 +905,12 @@ describe("scoped stream fallback", () => {
   });
 
   it("scoped stream goes back to warming on error", () => {
-    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    const lifeline = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(lifeline);
 
     const scoped = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(scoped);
     simulateSSEOpen(scoped);
@@ -922,12 +922,12 @@ describe("scoped stream fallback", () => {
   });
 
   it("does not dispatch fallback when scoped stream is not active", () => {
-    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    const lifeline = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(lifeline);
 
     const scoped = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(scoped);
     simulateSSEOpen(scoped);
@@ -942,14 +942,14 @@ describe("scoped stream fallback", () => {
 
   it("lifeline connection state is unaffected by scoped stream errors", () => {
     const lifeline = createSSEElement({
-      "data-tavern-role": "lifeline",
-      "data-tavern-reconnecting-class": "opacity-50",
+      "tavern-role": "lifeline",
+      "tavern-reconnecting-class": "opacity-50",
     });
     window.Tavern.bind(lifeline);
 
     const scoped = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(scoped);
     simulateSSEOpen(scoped);
@@ -975,7 +975,7 @@ describe("shell persistence during navigation", () => {
 
     const lifeline = document.createElement("div");
     lifeline.setAttribute("sse-connect", "/sse/global");
-    lifeline.setAttribute("data-tavern-role", "lifeline");
+    lifeline.setAttribute("tavern-role", "lifeline");
     shell.appendChild(lifeline);
     window.Tavern.bind(lifeline);
 
@@ -995,12 +995,12 @@ describe("shell persistence during navigation", () => {
   });
 
   it("scoped stream can be added/removed without affecting lifeline", () => {
-    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    const lifeline = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(lifeline);
 
     const scoped = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(scoped);
 
@@ -1013,12 +1013,12 @@ describe("shell persistence during navigation", () => {
   });
 
   it("destroy() clears lifeline and streams state", () => {
-    const lifeline = createSSEElement({ "data-tavern-role": "lifeline" });
+    const lifeline = createSSEElement({ "tavern-role": "lifeline" });
     window.Tavern.bind(lifeline);
 
     const scoped = createSSEElement({
-      "data-tavern-role": "scoped",
-      "data-tavern-scope": "chat",
+      "tavern-role": "scoped",
+      "tavern-scope": "chat",
     });
     window.Tavern.bind(scoped);
 
