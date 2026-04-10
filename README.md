@@ -32,10 +32,10 @@ no idea something went wrong.
 <div id="notifications"
      sse-connect="/sse/notifications"
      sse-swap="message"
-     data-tavern-reconnecting-class="opacity-50"
-     data-tavern-gap-action="reload">
+     tavern-reconnecting-class="opacity-50"
+     tavern-gap-action="reload">
 
-  <div data-tavern-status class="hidden">
+  <div tavern-status class="hidden">
     Reconnecting...
   </div>
 </div>
@@ -81,27 +81,27 @@ and listens for three control events that the tavern broker already emits:
 Connection drops are detected via HTMX lifecycle events (`htmx:sseError` /
 `htmx:sseOpen`) so the UI reacts immediately — before the server even knows.
 
-## Data Attributes
+## Attributes
 
 Configure behavior declaratively on any `sse-connect` element:
 
 | Attribute | Type | Description |
 |---|---|---|
-| `data-tavern-reconnecting-class` | CSS class(es) | Applied during disconnection, removed on reconnect. Space-separated for multiple classes. |
-| `data-tavern-gap-action` | `"reload"` \| `"banner"` \| event name | What to do when a replay gap is detected. `"reload"` refreshes the page. `"banner"` prepends a clickable banner. Anything else dispatches a custom DOM event with that name. |
-| `data-tavern-gap-banner-text` | string | Custom text for the gap banner (default: "Connection interrupted. Click to refresh.") |
-| `data-tavern-debug` | flag | Enable `console.debug` logging for this element. |
+| `tavern-reconnecting-class` | CSS class(es) | Applied during disconnection, removed on reconnect. Space-separated for multiple classes. |
+| `tavern-gap-action` | `"reload"` \| `"banner"` \| event name | What to do when a replay gap is detected. `"reload"` refreshes the page. `"banner"` prepends a clickable banner. Anything else dispatches a custom DOM event with that name. |
+| `tavern-gap-banner-text` | string | Custom text for the gap banner (default: "Connection interrupted. Click to refresh.") |
+| `tavern-debug` | flag | Enable `console.debug` logging for this element. |
 
 ### Status Elements
 
-Any child element with `data-tavern-status` is automatically shown during
+Any child element with `tavern-status` is automatically shown during
 disconnection and hidden on reconnect:
 
 ```html
 <div sse-connect="/sse/feed"
-     data-tavern-reconnecting-class="opacity-50">
+     tavern-reconnecting-class="opacity-50">
 
-  <div data-tavern-status class="hidden">
+  <div tavern-status class="hidden">
     <span class="animate-pulse">Reconnecting...</span>
   </div>
 
@@ -117,7 +117,7 @@ tavern.js dispatches bubbling custom events for programmatic handling:
 |---|---|---|
 | `tavern:disconnected` | — | SSE connection dropped |
 | `tavern:reconnected` | — | Server confirmed reconnection |
-| `tavern:replay-gap` | `{ lastEventId }` | Replay log can't satisfy request (only when no `data-tavern-gap-action`) |
+| `tavern:replay-gap` | `{ lastEventId }` | Replay log can't satisfy request (only when no `tavern-gap-action`) |
 | `tavern:topics-changed` | parsed JSON payload | Topic subscriptions changed |
 
 ```javascript
@@ -250,8 +250,8 @@ leave.
 
 | Attribute | Values | Description |
 |---|---|---|
-| `data-tavern-role` | `"lifeline"` \| `"scoped"` | Marks the connection role. Only one lifeline is allowed per page. |
-| `data-tavern-scope` | string | Names a scoped stream for coordination (required when role is "scoped"). |
+| `tavern-role` | `"lifeline"` \| `"scoped"` | Marks the connection role. Only one lifeline is allowed per page. |
+| `tavern-scope` | string | Names a scoped stream for coordination (required when role is "scoped"). |
 
 ### Stream lifecycle events
 
@@ -291,10 +291,10 @@ Tavern.retire("chat");
 ```html
 <div sse-connect="/sse/dashboard"
      sse-swap="update"
-     data-tavern-reconnecting-class="opacity-50 pointer-events-none"
+     tavern-reconnecting-class="opacity-50 pointer-events-none"
      class="relative">
 
-  <div data-tavern-status class="hidden absolute inset-0 flex items-center justify-center bg-white/80">
+  <div tavern-status class="hidden absolute inset-0 flex items-center justify-center bg-white/80">
     <span class="animate-pulse text-gray-500">Reconnecting...</span>
   </div>
 </div>
@@ -305,7 +305,7 @@ Tavern.retire("chat");
 ```html
 <div sse-connect="/sse/prices"
      sse-swap="ticker"
-     data-tavern-gap-action="reload">
+     tavern-gap-action="reload">
   <!-- Stale price data is worse than a reload -->
 </div>
 ```
@@ -315,8 +315,8 @@ Tavern.retire("chat");
 ```html
 <div sse-connect="/sse/chat"
      sse-swap="message"
-     data-tavern-gap-action="banner"
-     data-tavern-gap-banner-text="You missed some messages. Click to catch up.">
+     tavern-gap-action="banner"
+     tavern-gap-banner-text="You missed some messages. Click to catch up.">
 </div>
 ```
 
@@ -326,7 +326,7 @@ Tavern.retire("chat");
 <div id="feed"
      sse-connect="/sse/feed"
      sse-swap="post"
-     data-tavern-gap-action="feed-stale">
+     tavern-gap-action="feed-stale">
 </div>
 
 <script>
@@ -341,7 +341,7 @@ Tavern.retire("chat");
 
 ```html
 <div sse-connect="/sse/debug"
-     data-tavern-debug>
+     tavern-debug>
   <!-- Check the browser console for [tavern] messages -->
 </div>
 ```
@@ -352,17 +352,17 @@ Tavern.retire("chat");
 <!-- Persistent lifeline — stays connected across navigations -->
 <div sse-connect="/sse/global"
      sse-swap="notification"
-     data-tavern-role="lifeline"
-     data-tavern-reconnecting-class="opacity-50">
-  <div data-tavern-status class="hidden">Reconnecting...</div>
+     tavern-role="lifeline"
+     tavern-reconnecting-class="opacity-50">
+  <div tavern-status class="hidden">Reconnecting...</div>
 </div>
 
 <!-- Scoped stream — tied to the current page -->
 <div id="chat-stream"
      sse-connect="/sse/chat/room1"
      sse-swap="message"
-     data-tavern-role="scoped"
-     data-tavern-scope="chat">
+     tavern-role="scoped"
+     tavern-scope="chat">
 </div>
 ```
 
@@ -390,7 +390,7 @@ Tavern.retire("chat");
 ```html
 <script>
   // Listen on the lifeline for scoped stream failures
-  document.querySelector("[data-tavern-role='lifeline']")
+  document.querySelector("[tavern-role='lifeline']")
     .addEventListener("tavern:stream-fallback", (e) => {
       console.log("Scoped stream failed:", e.detail.scope);
       // Show a degraded UI or retry logic

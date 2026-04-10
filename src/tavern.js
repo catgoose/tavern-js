@@ -2,7 +2,7 @@
  * tavern.js — Client-side companion for the tavern SSE pub/sub engine.
  *
  * Listens for tavern control events on HTMX SSE connections and translates
- * them into declarative, data-attribute-driven UI behaviors.
+ * them into declarative, attribute-driven UI behaviors.
  *
  * Control events handled:
  * - tavern-reconnected  — fires when the server confirms a reconnection
@@ -61,12 +61,12 @@
    */
   function readConfig(el) {
     return {
-      reconnectingClass: el.getAttribute("data-tavern-reconnecting-class"),
-      gapAction: el.getAttribute("data-tavern-gap-action"),
-      gapBannerText: el.getAttribute("data-tavern-gap-banner-text"),
-      debug: el.hasAttribute("data-tavern-debug"),
-      role: el.getAttribute("data-tavern-role"),
-      scope: el.getAttribute("data-tavern-scope"),
+      reconnectingClass: el.getAttribute("tavern-reconnecting-class"),
+      gapAction: el.getAttribute("tavern-gap-action"),
+      gapBannerText: el.getAttribute("tavern-gap-banner-text"),
+      debug: el.hasAttribute("tavern-debug"),
+      role: el.getAttribute("tavern-role"),
+      scope: el.getAttribute("tavern-scope"),
     };
   }
 
@@ -84,24 +84,24 @@
   }
 
   /**
-   * Shows all [data-tavern-status] children within an element.
+   * Shows all [tavern-status] children within an element.
    *
    * @param {HTMLElement} el - Parent element to search within
    */
   function showStatus(el) {
-    el.querySelectorAll("[data-tavern-status]").forEach(function (s) {
+    el.querySelectorAll("[tavern-status]").forEach(function (s) {
       s.classList.remove("hidden");
       s.removeAttribute("hidden");
     });
   }
 
   /**
-   * Hides all [data-tavern-status] children within an element.
+   * Hides all [tavern-status] children within an element.
    *
    * @param {HTMLElement} el - Parent element to search within
    */
   function hideStatus(el) {
-    el.querySelectorAll("[data-tavern-status]").forEach(function (s) {
+    el.querySelectorAll("[tavern-status]").forEach(function (s) {
       s.classList.add("hidden");
       s.setAttribute("hidden", "");
     });
@@ -209,10 +209,10 @@
    */
   function showGapBanner(el, config) {
     // Avoid duplicate banners
-    if (el.querySelector("[data-tavern-gap-banner]")) return;
+    if (el.querySelector("[tavern-gap-banner]")) return;
 
     var wrapper = document.createElement("div");
-    wrapper.setAttribute("data-tavern-gap-banner", "");
+    wrapper.setAttribute("tavern-gap-banner", "");
 
     var msg = document.createElement("span");
     msg.setAttribute("role", "alert");
