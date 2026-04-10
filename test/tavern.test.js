@@ -1029,6 +1029,103 @@ describe("shell persistence during navigation", () => {
   });
 });
 
+describe("command()", () => {
+  beforeEach(async () => {
+    await loadTavern();
+    // Stub global fetch
+    globalThis.fetch = vi.fn();
+  });
+
+  it("sends POST with JSON body to the provided URL", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const result = await window.Tavern.command("/calendar/select-day", { d: "2026-04-15" });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/calendar/select-day", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ d: "2026-04-15" }),
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("defaults body to empty object when omitted", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    await window.Tavern.command("/dismiss");
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/dismiss", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+  });
+
+  it("forwards headers option merged with Content-Type", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    await window.Tavern.command("/api/action", { x: 1 }, {
+      headers: { "X-Custom": "value" },
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Custom": "value" },
+      body: JSON.stringify({ x: 1 }),
+    });
+  });
+
+  it("forwards signal option", async () => {
+    const controller = new AbortController();
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    await window.Tavern.command("/api/action", {}, { signal: controller.signal });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+      signal: controller.signal,
+    });
+  });
+
+  it("forwards credentials option", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    await window.Tavern.command("/api/action", {}, { credentials: "include" });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+      credentials: "include",
+    });
+  });
+
+  it("rejects on non-2xx response", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: false, status: 422, statusText: "Unprocessable Entity" });
+
+    await expect(window.Tavern.command("/api/fail", {})).rejects.toThrow(
+      "Tavern.command: 422 Unprocessable Entity",
+    );
+  });
+
+  it("rejects on network failure", async () => {
+    globalThis.fetch.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    await expect(window.Tavern.command("/api/down", {})).rejects.toThrow(
+      "Failed to fetch",
+    );
+  });
+
+  it("resolves without assuming response payload", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 204, statusText: "No Content" });
+
+    const result = await window.Tavern.command("/api/noop", {});
+    expect(result.status).toBe(204);
+  });
+});
+
 describe("non-browser environment", () => {
   it("does not crash when document is undefined", async () => {
     const { execSync } = await import("node:child_process");
