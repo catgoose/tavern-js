@@ -12,7 +12,7 @@
  * - tavern-backpressure   — fires on backpressure tier changes (JSON: tier, previousTier, topic)
  *
  * @module tavern
- * @version 0.0.21
+ * @version 0.0.22
  * @license MIT
  * @see https://github.com/catgoose/tavern
  */
