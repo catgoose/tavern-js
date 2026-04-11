@@ -99,6 +99,13 @@ Configure behavior declaratively on any `sse-connect` element:
 > Part of the [interaction insulation](#interaction-insulation) pattern —
 > provides the delivery truth layer.
 
+> _A representation carries CONTROLS. Instructions. Affordances. The next available actions. A photograph of a mountain does not contain a trail map. A proper representation does._
+>
+> — The Wisdom of the Uniform Interface
+
+tavern-js extends this to delivery state — the region tells you honestly
+whether what you're seeing is current, stale, or recovering.
+
 Beyond binary connected/disconnected, tavern.js tracks granular region
 state so the UI can reflect intermediate conditions like recovery and
 staleness.
@@ -208,6 +215,14 @@ corresponding DOM events. Malformed or empty payloads are handled gracefully
 
 ## Commands
 
+> _If your client must be recompiled when you rename a resource, you have coupled the client to the server's URI structure and you will maintain this coupling in blood and tears until one of you is decommissioned._
+>
+> — The Wisdom of the Uniform Interface
+
+Node-bound click handlers are the DOM equivalent of hardcoded endpoints —
+coupled to specific nodes that the server replaces at will. Commands on a
+stable boundary decouple intent from ephemeral DOM.
+
 Some Tavern-driven interfaces update so rapidly over SSE that interactive
 elements inside the update region can be replaced while the user is clicking
 them. In these "hot" DOM regions, node-bound actions like `hx-post` or
@@ -270,6 +285,14 @@ contains UI state.
 
 > Part of the [interaction insulation](#interaction-insulation) pattern —
 > provides the intent capture layer.
+
+> _Hypertext is the simultaneous presentation of information and controls such that the information BECOMES THE AFFORDANCE through which choices are obtained and actions are selected._
+>
+> — The Wisdom of the Uniform Interface
+
+In a hot region, the information (SSE content) is ephemeral but the
+affordance (command intent) must survive. Delegated commands put the
+affordance on the stable boundary.
 
 For common cases where every interactive element in a hot region follows the
 same pattern (click a button, POST to its URL, send its data attributes),
@@ -421,6 +444,15 @@ and any other mechanism that injects HTML into the DOM.
 
 ## App Shell & Lifeline Connections
 
+> _Master say: "but how does the client know when state changes?"_
+>
+> _Grug say: "server tell it."_
+>
+> — The Recorded Sayings of Layman Grug, [The Dothog Manifesto](https://github.com/catgoose/dothog/blob/main/MANIFESTO.md)
+
+The lifeline is the channel through which the server tells the client. It
+stays open, it's always honest, and it doesn't care what page you're on.
+
 Modern SPAs and HTMX-driven apps often have a persistent "shell" (sidebar,
 header, global notifications) alongside content areas that change on
 navigation. Tavern supports this pattern with **lifeline connections** and
@@ -485,6 +517,24 @@ Tavern.retire("chat");
 
 > Part of the [interaction insulation](#interaction-insulation) pattern —
 > provides the interaction safety layer.
+
+> _Student ask Grug about complexity._
+>
+> _Grug say: "complexity is apex predator."_
+>
+> _Student say: "how do I defeat the complexity?"_
+>
+> _Grug say: "you do not defeat. you say the magic word."_
+>
+> _Student lean forward. "what is the magic word?"_
+>
+> _Grug say: "no."_
+>
+> — The Recorded Sayings of Layman Grug, [The Dothog Manifesto](https://github.com/catgoose/dothog/blob/main/MANIFESTO.md)
+
+Hot-region policies literally say "no" to DOM updates while the user is
+interacting. Don't fight the complexity of reconciling user interaction
+with live DOM — just pause it.
 
 SSE-driven DOM regions update rapidly, which can disrupt user interactions
 like dragging, selecting, or typing. `tavern-hot-policy` pauses incoming
@@ -705,6 +755,20 @@ attributes go on it. Interior elements are ephemeral — they carry only
     });
 </script>
 ```
+
+## Philosophy
+
+> _THE FOOL asked: "What should I do?"_
+>
+> _Enter the application with a single URI and a set of standardized media types. Follow the links. Submit the forms. Let the server drive the state. That is all._
+>
+> — The Wisdom of the Uniform Interface
+
+tavern-js follows the [dothog design philosophy](https://github.com/catgoose/dothog/blob/main/PHILOSOPHY.md).
+The server owns state and truth. The browser renders what the server sends.
+tavern-js is the thin layer that makes the browser honest about delivery —
+reconnection, staleness, gaps, and interaction safety — so the user sees
+what's real, not what's cached.
 
 ## Development
 
