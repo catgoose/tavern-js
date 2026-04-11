@@ -1391,6 +1391,22 @@ describe("delegated commands", () => {
   });
 });
 
+/**
+ * Creates a status element with a given attribute inside a parent.
+ *
+ * @param {HTMLElement} parent
+ * @param {string} attr - Attribute name (e.g. "tavern-status-live")
+ * @param {string} [text]
+ * @returns {HTMLElement}
+ */
+function createStatusByAttr(parent, attr, text = "") {
+  const el = document.createElement("span");
+  el.setAttribute(attr, "");
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
 describe("hot-region interaction protection", () => {
   beforeEach(async () => {
     document.body.innerHTML = "";
@@ -1622,6 +1638,240 @@ describe("hot-region interaction protection", () => {
     el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     el.dispatchEvent(new Event("pointerup", { bubbles: true }));
     expect(spy.mock.calls[1][0].detail.flushed).toBe(0);
+  });
+});
+
+describe("stale/live UX primitives", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+  });
+
+  it("initial state is live — tavern-status-live shown, stale/recovering hidden", () => {
+    const el = createSSEElement({
+      "tavern-live-class": "opacity-100",
+      "tavern-stale-class": "opacity-50",
+    });
+    const statusLive = createStatusByAttr(el, "tavern-status-live", "Live");
+    const statusStale = createStatusByAttr(el, "tavern-status-stale", "Stale");
+    statusStale.classList.add("hidden");
+    statusStale.setAttribute("hidden", "");
+    const statusRecovering = createStatusByAttr(el, "tavern-status-recovering", "Recovering");
+    statusRecovering.classList.add("hidden");
+    statusRecovering.setAttribute("hidden", "");
+
+    window.Tavern.bind(el);
+
+    expect(el._tavernRegionState).toBe("live");
+    expect(statusLive.classList.contains("hidden")).toBe(false);
+    expect(statusLive.hasAttribute("hidden")).toBe(false);
+    expect(statusStale.classList.contains("hidden")).toBe(true);
+    expect(statusRecovering.classList.contains("hidden")).toBe(true);
+  });
+
+  it("tavern-live-class applied initially, tavern-stale-class not applied", () => {
+    const el = createSSEElement({
+      "tavern-live-class": "opacity-100",
+      "tavern-stale-class": "opacity-50",
+    });
+    window.Tavern.bind(el);
+
+    expect(el.classList.contains("opacity-100")).toBe(true);
+    expect(el.classList.contains("opacity-50")).toBe(false);
+  });
+
+  it("on sseError state becomes disconnected, live class removed", () => {
+    const el = createSSEElement({
+      "tavern-live-class": "opacity-100",
+      "tavern-stale-class": "opacity-50",
+    });
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    el.dispatchEvent(new Event("htmx:sseError"));
+
+    expect(el._tavernRegionState).toBe("disconnected");
+    expect(el.classList.contains("opacity-100")).toBe(false);
+    expect(el.classList.contains("opacity-50")).toBe(false);
+  });
+
+  it("on sseOpen after error state becomes recovering, tavern:recovering fires", () => {
+    const el = createSSEElement({
+      "tavern-live-class": "opacity-100",
+    });
+    const statusRecovering = createStatusByAttr(el, "tavern-status-recovering", "Recovering...");
+    statusRecovering.classList.add("hidden");
+    statusRecovering.setAttribute("hidden", "");
+
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    el.dispatchEvent(new Event("htmx:sseError"));
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:recovering", spy);
+
+    simulateSSEOpen(el);
+
+    expect(el._tavernRegionState).toBe("recovering");
+    expect(spy).toHaveBeenCalledOnce();
+    expect(statusRecovering.classList.contains("hidden")).toBe(false);
+    expect(statusRecovering.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("on tavern-reconnected state becomes live, live class applied, stale class removed, tavern:live fires", () => {
+    const el = createSSEElement({
+      "tavern-live-class": "opacity-100",
+      "tavern-stale-class": "opacity-50",
+    });
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    // Disconnect
+    el.dispatchEvent(new Event("htmx:sseError"));
+
+    // Reconnect
+    const source2 = simulateSSEOpen(el);
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:live", spy);
+
+    fireSSEEvent(source2, "tavern-reconnected");
+
+    expect(el._tavernRegionState).toBe("live");
+    expect(el.classList.contains("opacity-100")).toBe(true);
+    expect(el.classList.contains("opacity-50")).toBe(false);
+    expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it("on replay-gap (non-reload) state becomes stale, tavern:stale fires", () => {
+    const el = createSSEElement({
+      "tavern-live-class": "opacity-100",
+      "tavern-stale-class": "opacity-50",
+    });
+    const statusStale = createStatusByAttr(el, "tavern-status-stale", "Stale");
+    statusStale.classList.add("hidden");
+    statusStale.setAttribute("hidden", "");
+
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:stale", spy);
+
+    fireSSEEvent(source, "tavern-replay-gap", "evt-99");
+
+    expect(el._tavernRegionState).toBe("stale");
+    expect(el.classList.contains("opacity-50")).toBe(true);
+    expect(el.classList.contains("opacity-100")).toBe(false);
+    expect(statusStale.classList.contains("hidden")).toBe(false);
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0].detail.reason).toBe("replay-gap");
+  });
+
+  it("on tavern-reconnected after stale, state becomes live again", () => {
+    const el = createSSEElement({
+      "tavern-live-class": "opacity-100",
+      "tavern-stale-class": "opacity-50",
+    });
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    // Go stale via replay-gap
+    fireSSEEvent(source, "tavern-replay-gap", "evt-99");
+    expect(el._tavernRegionState).toBe("stale");
+
+    // Need to disconnect and reconnect to get tavern-reconnected
+    el.dispatchEvent(new Event("htmx:sseError"));
+    const source2 = simulateSSEOpen(el);
+    fireSSEEvent(source2, "tavern-reconnected");
+
+    expect(el._tavernRegionState).toBe("live");
+    expect(el.classList.contains("opacity-100")).toBe(true);
+    expect(el.classList.contains("opacity-50")).toBe(false);
+  });
+
+  it("existing tavern-status and tavern-reconnecting-class behavior unchanged", () => {
+    const el = createSSEElement({
+      "tavern-reconnecting-class": "opacity-50",
+    });
+    const status = createStatusElement(el);
+    window.Tavern.bind(el);
+
+    // Disconnect
+    el.dispatchEvent(new Event("htmx:sseError"));
+    expect(el.classList.contains("opacity-50")).toBe(true);
+    expect(status.classList.contains("hidden")).toBe(false);
+    expect(status.hasAttribute("hidden")).toBe(false);
+
+    // Reconnect
+    const source = simulateSSEOpen(el);
+    fireSSEEvent(source, "tavern-reconnected");
+    expect(el.classList.contains("opacity-50")).toBe(false);
+    expect(status.classList.contains("hidden")).toBe(true);
+    expect(status.hasAttribute("hidden")).toBe(true);
+  });
+
+  it("multiple space-separated classes work for stale-class and live-class", () => {
+    const el = createSSEElement({
+      "tavern-live-class": "opacity-100 border-green",
+      "tavern-stale-class": "opacity-50 border-red",
+    });
+    window.Tavern.bind(el);
+
+    // Initially live classes applied
+    expect(el.classList.contains("opacity-100")).toBe(true);
+    expect(el.classList.contains("border-green")).toBe(true);
+
+    const source = simulateSSEOpen(el);
+
+    // Go stale
+    fireSSEEvent(source, "tavern-replay-gap", "evt-1");
+    expect(el.classList.contains("opacity-50")).toBe(true);
+    expect(el.classList.contains("border-red")).toBe(true);
+    expect(el.classList.contains("opacity-100")).toBe(false);
+    expect(el.classList.contains("border-green")).toBe(false);
+
+    // Recover
+    el.dispatchEvent(new Event("htmx:sseError"));
+    const source2 = simulateSSEOpen(el);
+    fireSSEEvent(source2, "tavern-reconnected");
+    expect(el.classList.contains("opacity-100")).toBe(true);
+    expect(el.classList.contains("border-green")).toBe(true);
+    expect(el.classList.contains("opacity-50")).toBe(false);
+    expect(el.classList.contains("border-red")).toBe(false);
+  });
+
+  it("replay-gap with banner action still sets stale state", () => {
+    const el = createSSEElement({
+      "tavern-gap-action": "banner",
+      "tavern-stale-class": "opacity-50",
+    });
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    fireSSEEvent(source, "tavern-replay-gap", "evt-1");
+
+    expect(el._tavernRegionState).toBe("stale");
+    expect(el.classList.contains("opacity-50")).toBe(true);
+    expect(el.querySelector("[tavern-gap-banner]")).not.toBeNull();
+  });
+
+  it("replay-gap with custom event action still sets stale state", () => {
+    const el = createSSEElement({
+      "tavern-gap-action": "my-custom-event",
+      "tavern-stale-class": "opacity-50",
+    });
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    const spy = vi.fn();
+    el.addEventListener("my-custom-event", spy);
+
+    fireSSEEvent(source, "tavern-replay-gap", "evt-1");
+
+    expect(el._tavernRegionState).toBe("stale");
+    expect(spy).toHaveBeenCalledOnce();
   });
 });
 
