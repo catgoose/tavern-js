@@ -1126,6 +1126,271 @@ describe("command()", () => {
   });
 });
 
+describe("delegated commands", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+    globalThis.fetch = vi.fn();
+  });
+
+  /**
+   * Creates a child element with command-url and optional command-* attributes.
+   *
+   * @param {HTMLElement} parent - Parent element to append to
+   * @param {Object} [attrs] - Attributes to set on the child
+   * @returns {HTMLElement}
+   */
+  function createCommandChild(parent, attrs = {}) {
+    const child = document.createElement("button");
+    for (const [key, value] of Object.entries(attrs)) {
+      child.setAttribute(key, value);
+    }
+    parent.appendChild(child);
+    return child;
+  }
+
+  it("click on a matching child triggers Tavern.command() with correct URL and body", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    child.click();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/tasks/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "42" }),
+    });
+  });
+
+  it("click on a non-matching child is ignored", () => {
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    // Child without command-url
+    const child = document.createElement("span");
+    child.textContent = "no command here";
+    el.appendChild(child);
+
+    child.click();
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("multiple command-* attributes are collected into body", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/update",
+      "command-id": "42",
+      "command-action": "complete",
+      "command-priority": "high",
+    });
+
+    child.click();
+
+    const callBody = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
+    expect(callBody.id).toBe("42");
+    expect(callBody.action).toBe("complete");
+    expect(callBody.priority).toBe("high");
+  });
+
+  it("command-url is not included in body", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    child.click();
+
+    const callBody = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
+    expect(callBody.url).toBeUndefined();
+    expect(callBody.id).toBe("42");
+  });
+
+  it("tavern:command-sent event fires on the matched element", () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    const spy = vi.fn();
+    child.addEventListener("tavern:command-sent", spy);
+
+    child.click();
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0].detail.url).toBe("/tasks/complete");
+    expect(spy.mock.calls[0][0].detail.body).toEqual({ id: "42" });
+  });
+
+  it("tavern:command-success event fires on successful response", async () => {
+    const mockResponse = { ok: true, status: 200, statusText: "OK" };
+    globalThis.fetch.mockResolvedValue(mockResponse);
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    const spy = vi.fn();
+    child.addEventListener("tavern:command-success", spy);
+
+    child.click();
+
+    // Wait for the promise to resolve
+    await vi.waitFor(() => {
+      expect(spy).toHaveBeenCalledOnce();
+    });
+
+    expect(spy.mock.calls[0][0].detail.url).toBe("/tasks/complete");
+    expect(spy.mock.calls[0][0].detail.body).toEqual({ id: "42" });
+    expect(spy.mock.calls[0][0].detail.response).toBe(mockResponse);
+  });
+
+  it("tavern:command-error event fires on failed response", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: false, status: 500, statusText: "Internal Server Error" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    const spy = vi.fn();
+    child.addEventListener("tavern:command-error", spy);
+
+    child.click();
+
+    await vi.waitFor(() => {
+      expect(spy).toHaveBeenCalledOnce();
+    });
+
+    expect(spy.mock.calls[0][0].detail.url).toBe("/tasks/complete");
+    expect(spy.mock.calls[0][0].detail.body).toEqual({ id: "42" });
+    expect(spy.mock.calls[0][0].detail.error).toBeInstanceOf(Error);
+    expect(spy.mock.calls[0][0].detail.error.message).toContain("500");
+  });
+
+  it("nested matching — closest() finds the nearest ancestor with the selector", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const wrapper = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    // Nested span inside the command element
+    const inner = document.createElement("span");
+    inner.textContent = "Done";
+    wrapper.appendChild(inner);
+
+    inner.click();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/tasks/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "42" }),
+    });
+  });
+
+  it("closest() match outside the bound parent is ignored", () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    // Create a wrapper that itself matches [command-url] — it sits OUTSIDE the SSE element
+    const outer = document.createElement("div");
+    outer.setAttribute("command-url", "/should-not-fire");
+    outer.setAttribute("command-id", "999");
+    document.body.appendChild(outer);
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    // Move el inside the outer wrapper so closest() could walk up to it
+    outer.appendChild(el);
+
+    window.Tavern.bind(el);
+
+    // Click a plain child inside el — closest("[command-url]") would walk up to `outer`
+    const child = document.createElement("span");
+    child.textContent = "click me";
+    el.appendChild(child);
+
+    child.click();
+
+    // The outer element is outside el, so the command must NOT fire
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("element without tavern-command-delegate does not set up delegation", () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    child.click();
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
+
 describe("non-browser environment", () => {
   it("does not crash when document is undefined", async () => {
     const { execSync } = await import("node:child_process");
