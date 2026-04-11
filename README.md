@@ -55,7 +55,7 @@ That's it. No custom JavaScript. Tavern already knows when things go wrong —
 Pin to a specific version:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/catgoose/tavern-js@v0.0.19/dist/tavern.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/catgoose/tavern-js@v0.0.20/dist/tavern.min.js"></script>
 ```
 
 **Direct download:** Grab `dist/tavern.min.js` from the
