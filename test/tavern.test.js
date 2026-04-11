@@ -1647,7 +1647,27 @@ describe("stale/live UX primitives", () => {
     await loadTavern();
   });
 
-  it("initial state is live — tavern-status-live shown, stale/recovering hidden", () => {
+  it("initial state is connecting — all status indicators hidden", () => {
+    const el = createSSEElement({
+      "tavern-live-class": "opacity-100",
+      "tavern-stale-class": "opacity-50",
+    });
+    const statusLive = createStatusByAttr(el, "tavern-status-live", "Live");
+    const statusStale = createStatusByAttr(el, "tavern-status-stale", "Stale");
+    const statusRecovering = createStatusByAttr(el, "tavern-status-recovering", "Recovering");
+
+    window.Tavern.bind(el);
+
+    expect(el._tavernRegionState).toBe("connecting");
+    expect(statusLive.classList.contains("hidden")).toBe(true);
+    expect(statusLive.hasAttribute("hidden")).toBe(true);
+    expect(statusStale.classList.contains("hidden")).toBe(true);
+    expect(statusRecovering.classList.contains("hidden")).toBe(true);
+    expect(el.classList.contains("opacity-100")).toBe(false);
+    expect(el.classList.contains("opacity-50")).toBe(false);
+  });
+
+  it("transitions to live on first sseOpen — live class applied, tavern:live fires", () => {
     const el = createSSEElement({
       "tavern-live-class": "opacity-100",
       "tavern-stale-class": "opacity-50",
@@ -1656,26 +1676,35 @@ describe("stale/live UX primitives", () => {
     const statusStale = createStatusByAttr(el, "tavern-status-stale", "Stale");
     statusStale.classList.add("hidden");
     statusStale.setAttribute("hidden", "");
-    const statusRecovering = createStatusByAttr(el, "tavern-status-recovering", "Recovering");
-    statusRecovering.classList.add("hidden");
-    statusRecovering.setAttribute("hidden", "");
 
     window.Tavern.bind(el);
 
+    const spy = vi.fn();
+    el.addEventListener("tavern:live", spy);
+
+    simulateSSEOpen(el);
+
     expect(el._tavernRegionState).toBe("live");
+    expect(el.classList.contains("opacity-100")).toBe(true);
+    expect(el.classList.contains("opacity-50")).toBe(false);
     expect(statusLive.classList.contains("hidden")).toBe(false);
     expect(statusLive.hasAttribute("hidden")).toBe(false);
-    expect(statusStale.classList.contains("hidden")).toBe(true);
-    expect(statusRecovering.classList.contains("hidden")).toBe(true);
+    expect(spy).toHaveBeenCalledOnce();
   });
 
-  it("tavern-live-class applied initially, tavern-stale-class not applied", () => {
+  it("tavern-live-class not applied until sseOpen, tavern-stale-class not applied", () => {
     const el = createSSEElement({
       "tavern-live-class": "opacity-100",
       "tavern-stale-class": "opacity-50",
     });
     window.Tavern.bind(el);
 
+    // Before sseOpen: neither class applied
+    expect(el.classList.contains("opacity-100")).toBe(false);
+    expect(el.classList.contains("opacity-50")).toBe(false);
+
+    // After sseOpen: live class applied
+    simulateSSEOpen(el);
     expect(el.classList.contains("opacity-100")).toBe(true);
     expect(el.classList.contains("opacity-50")).toBe(false);
   });
@@ -1686,7 +1715,10 @@ describe("stale/live UX primitives", () => {
       "tavern-stale-class": "opacity-50",
     });
     window.Tavern.bind(el);
-    const source = simulateSSEOpen(el);
+    simulateSSEOpen(el);
+
+    expect(el._tavernRegionState).toBe("live");
+    expect(el.classList.contains("opacity-100")).toBe(true);
 
     el.dispatchEvent(new Event("htmx:sseError"));
 
@@ -1819,11 +1851,15 @@ describe("stale/live UX primitives", () => {
     });
     window.Tavern.bind(el);
 
-    // Initially live classes applied
-    expect(el.classList.contains("opacity-100")).toBe(true);
-    expect(el.classList.contains("border-green")).toBe(true);
+    // Before sseOpen: no classes applied (connecting state)
+    expect(el.classList.contains("opacity-100")).toBe(false);
+    expect(el.classList.contains("border-green")).toBe(false);
 
     const source = simulateSSEOpen(el);
+
+    // After sseOpen: live classes applied
+    expect(el.classList.contains("opacity-100")).toBe(true);
+    expect(el.classList.contains("border-green")).toBe(true);
 
     // Go stale
     fireSSEEvent(source, "tavern-replay-gap", "evt-1");

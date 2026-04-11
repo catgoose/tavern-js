@@ -171,7 +171,7 @@
    * Updates el._tavernRegionState, toggles stale/live classes,
    * shows/hides status elements, and dispatches DOM events.
    *
-   * Valid states: "live", "disconnected", "recovering", "stale"
+   * Valid states: "connecting", "live", "disconnected", "recovering", "stale"
    *
    * @param {HTMLElement} el - The SSE-connected element
    * @param {TavernConfig} config - Current configuration
@@ -186,7 +186,13 @@
 
     debug(config, "region state:", oldState, "→", newState);
 
-    if (newState === "live") {
+    if (newState === "connecting") {
+      removeClasses(el, config.liveClass);
+      removeClasses(el, config.staleClass);
+      hideStatusByAttr(el, "tavern-status-live");
+      hideStatusByAttr(el, "tavern-status-stale");
+      hideStatusByAttr(el, "tavern-status-recovering");
+    } else if (newState === "live") {
       addClasses(el, config.liveClass);
       removeClasses(el, config.staleClass);
       showStatusByAttr(el, "tavern-status-live");
@@ -458,10 +464,9 @@
     // Delegated commands
     bindDelegatedCommands(el, config);
 
-    // Initialize region state to "live"
-    el._tavernRegionState = "live";
-    addClasses(el, config.liveClass);
-    showStatusByAttr(el, "tavern-status-live");
+    // Initialize region state to "connecting" — not yet live until SSE opens
+    el._tavernRegionState = "connecting";
+    hideStatusByAttr(el, "tavern-status-live");
     hideStatusByAttr(el, "tavern-status-stale");
     hideStatusByAttr(el, "tavern-status-recovering");
 
@@ -523,6 +528,11 @@
     });
 
     el.addEventListener("htmx:sseOpen", function (e) {
+      // First connection: transition from "connecting" to "live"
+      if (el._tavernRegionState === "connecting") {
+        setRegionState(el, config, "live");
+      }
+
       // Transport reopened — do NOT call markReconnected() here.
       // The server's tavern-reconnected control event is the authoritative
       // signal that recovery (replay, gap handling) is complete.
