@@ -95,6 +95,9 @@ Configure behavior declaratively on any `sse-connect` element:
 
 ### Stale / Live Region State
 
+> Part of the [interaction insulation](#interaction-insulation) pattern —
+> provides the delivery truth layer.
+
 Beyond binary connected/disconnected, tavern.js tracks granular region
 state so the UI can reflect intermediate conditions like recovery and
 staleness.
@@ -234,6 +237,9 @@ contains UI state.
 
 ## Delegated Commands
 
+> Part of the [interaction insulation](#interaction-insulation) pattern —
+> provides the intent capture layer.
+
 For common cases where every interactive element in a hot region follows the
 same pattern (click a button, POST to its URL, send its data attributes),
 tavern.js offers a fully declarative alternative — no JavaScript required.
@@ -371,6 +377,9 @@ Tavern.retire("chat");
 
 ## Hot-Region Interaction Protection
 
+> Part of the [interaction insulation](#interaction-insulation) pattern —
+> provides the interaction safety layer.
+
 SSE-driven DOM regions update rapidly, which can disrupt user interactions
 like dragging, selecting, or typing. `tavern-hot-policy` pauses incoming
 SSE swaps while the user is interacting, preventing the DOM from shifting
@@ -424,6 +433,58 @@ document.addEventListener("tavern:policy-deactivated", (e) => {
 | Attribute | Type | Description |
 |---|---|---|
 | `tavern-hot-policy` | space-separated keywords | Policies to apply. Unknown keywords are ignored with a console warning. |
+
+## Interaction Insulation
+
+> Interaction insulation is the stable boundary around a hot SSE-driven DOM
+> region. The interior is volatile — replaced by server-sent swaps. The
+> exterior captures user intent, enforces interaction policies, and surfaces
+> delivery state.
+
+### When you need it
+
+- The region receives frequent SSE swaps (multiple per second)
+- Users interact with elements inside the region (clicks, inputs, selections)
+- Node-bound handlers (`hx-post`, `onclick`) break because targets are replaced between events
+
+### When you don't
+
+- The region updates infrequently
+- The DOM is stable between user interactions
+- Standard HTMX attributes work reliably
+
+### How tavern-js provides it
+
+| Layer | Feature | Attributes |
+|---|---|---|
+| Intent capture | [Delegated commands](#delegated-commands) | `tavern-command-delegate`, `tavern-command-target` |
+| Interaction safety | [Hot-region policies](#hot-region-interaction-protection) | `tavern-hot-policy` |
+| Delivery truth | [Stale/live state](#stale--live-region-state) | `tavern-stale-class`, `tavern-live-class`, status elements |
+
+### Example — a fully insulated hot region
+
+```html
+<div id="task-list"
+     sse-connect="/sse/tasks"
+     sse-swap="tasks"
+     tavern-command-delegate="click"
+     tavern-command-target="[command-url]"
+     tavern-hot-policy="pause-on-pointerdown defer-on-focus"
+     tavern-stale-class="opacity-50"
+     tavern-live-class="opacity-100"
+     tavern-reconnecting-class="animate-pulse">
+  <span tavern-status-recovering class="hidden">Reconnecting…</span>
+  <span tavern-status-stale class="hidden">Stale</span>
+  <!-- Interior: volatile, server-driven -->
+  <button command-url="/tasks/complete" command-id="42">Done</button>
+</div>
+```
+
+### The boundary rule
+
+The `sse-connect` element is the insulation boundary. All `tavern-*`
+attributes go on it. Interior elements are ephemeral — they carry only
+`command-*` data attributes that the insulation layer reads.
 
 ## Examples
 
