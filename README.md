@@ -94,6 +94,7 @@ Configure behavior declaratively on any `sse-connect` element:
 | `tavern-gap-banner-text` | string | Custom text for the gap banner (default: "Connection interrupted. Click to refresh.") |
 | `tavern-debug` | flag | Enable `console.debug` logging for this element. |
 | `tavern-hot-policy` | space-separated keywords | Interaction protection policies: `pause-on-pointerdown`, `defer-on-focus`. See [Hot-Region Interaction Protection](#hot-region-interaction-protection). |
+| `tavern-hearth` | flag | Shorthand for hot-region commands: defaults `commandDelegate` to `"pointerdown"` and `commandTarget` to `"[command-url]"`. See [Hearth](#hearth-hot-region-shorthand). |
 
 ### Stale / Live Region State
 
@@ -456,6 +457,37 @@ SSE region:
 | `tavern:command-sent` | matched element | `{ url, body }` | Immediately before the POST |
 | `tavern:command-success` | matched element | `{ url, body, response }` | POST returned 2xx |
 | `tavern:command-error` | matched element | `{ url, body, error }` | POST failed or returned non-2xx |
+
+### Hearth (Hot-Region Shorthand)
+
+> _Grug close laptop. this is the entirety of Grug's teaching on micro-frontends._
+>
+> --- The Recorded Sayings of Layman Grug, [The Dothog Manifesto](https://github.com/catgoose/dothog/blob/main/MANIFESTO.md)
+
+`tavern-hearth` is the entirety of what most hot regions need --- one attribute
+instead of two.
+
+```html
+<div sse-connect="/sse/tasks"
+     sse-swap="tasks"
+     tavern-hearth
+     tavern-hot-policy="pause-on-pointerdown">
+  <button command-url="/tasks/1/complete" command-id="1">Done</button>
+</div>
+```
+
+This is equivalent to:
+
+```html
+tavern-command-delegate="pointerdown"
+tavern-command-target="[command-url]"
+```
+
+`tavern-hearth` is about command capture. `tavern-hot-policy` is about swap
+protection. They are complementary but independent.
+
+Explicit `tavern-command-delegate` or `tavern-command-target` attributes take
+precedence and override the hearth defaults.
 
 ## Programmatic API
 
