@@ -2260,6 +2260,175 @@ describe("delegated commands — pointerdown, dedup, URL expansion", () => {
   });
 });
 
+describe("backpressure / degradation signals", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+  });
+
+  it("dispatches tavern:stream-degraded on tier 'throttle'", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    let received = null;
+    el.addEventListener("tavern:stream-degraded", (e) => {
+      received = e.detail;
+    });
+
+    fireSSEEvent(
+      source,
+      "tavern-backpressure",
+      JSON.stringify({ tier: "throttle", previousTier: "normal", topic: "dashboard" }),
+    );
+
+    expect(received).not.toBeNull();
+    expect(received.tier).toBe("throttle");
+    expect(received.previousTier).toBe("normal");
+    expect(received.topic).toBe("dashboard");
+  });
+
+  it("dispatches tavern:stream-degraded on tier 'simplify'", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    let received = null;
+    el.addEventListener("tavern:stream-degraded", (e) => {
+      received = e.detail;
+    });
+
+    fireSSEEvent(
+      source,
+      "tavern-backpressure",
+      JSON.stringify({ tier: "simplify", previousTier: "throttle", topic: "feed" }),
+    );
+
+    expect(received).not.toBeNull();
+    expect(received.tier).toBe("simplify");
+    expect(received.previousTier).toBe("throttle");
+  });
+
+  it("dispatches tavern:stream-restored on tier 'normal'", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    let received = null;
+    el.addEventListener("tavern:stream-restored", (e) => {
+      received = e.detail;
+    });
+
+    fireSSEEvent(
+      source,
+      "tavern-backpressure",
+      JSON.stringify({ tier: "normal", previousTier: "throttle", topic: "dashboard" }),
+    );
+
+    expect(received).not.toBeNull();
+    expect(received.previousTier).toBe("throttle");
+    expect(received.topic).toBe("dashboard");
+  });
+
+  it("includes scope from element tavern-scope attribute", () => {
+    const el = createSSEElement({ "tavern-scope": "chat" });
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    let received = null;
+    el.addEventListener("tavern:stream-degraded", (e) => {
+      received = e.detail;
+    });
+
+    fireSSEEvent(
+      source,
+      "tavern-backpressure",
+      JSON.stringify({ tier: "throttle", previousTier: "normal", topic: "chat" }),
+    );
+
+    expect(received).not.toBeNull();
+    expect(received.scope).toBe("chat");
+  });
+
+  it("includes topic from payload", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    let received = null;
+    el.addEventListener("tavern:stream-degraded", (e) => {
+      received = e.detail;
+    });
+
+    fireSSEEvent(
+      source,
+      "tavern-backpressure",
+      JSON.stringify({ tier: "disconnect", previousTier: "simplify", topic: "prices" }),
+    );
+
+    expect(received).not.toBeNull();
+    expect(received.topic).toBe("prices");
+  });
+
+  it("handles empty/malformed payload without crashing", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    let received = null;
+    el.addEventListener("tavern:stream-degraded", (e) => {
+      received = e.detail;
+    });
+
+    // Empty payload
+    fireSSEEvent(source, "tavern-backpressure", "");
+
+    expect(received).not.toBeNull();
+    expect(received.tier).toBe("unknown");
+    expect(received.previousTier).toBe("unknown");
+    expect(received.topic).toBeNull();
+    expect(received.scope).toBeNull();
+  });
+
+  it("dispatches correct events for a sequence of tier changes", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+    const source = simulateSSEOpen(el);
+
+    const events = [];
+    el.addEventListener("tavern:stream-degraded", (e) => {
+      events.push({ type: "degraded", tier: e.detail.tier });
+    });
+    el.addEventListener("tavern:stream-restored", (e) => {
+      events.push({ type: "restored", previousTier: e.detail.previousTier });
+    });
+
+    // Escalate: normal -> throttle
+    fireSSEEvent(
+      source,
+      "tavern-backpressure",
+      JSON.stringify({ tier: "throttle", previousTier: "normal", topic: "t" }),
+    );
+    // Escalate: throttle -> simplify
+    fireSSEEvent(
+      source,
+      "tavern-backpressure",
+      JSON.stringify({ tier: "simplify", previousTier: "throttle", topic: "t" }),
+    );
+    // De-escalate: simplify -> normal
+    fireSSEEvent(
+      source,
+      "tavern-backpressure",
+      JSON.stringify({ tier: "normal", previousTier: "simplify", topic: "t" }),
+    );
+
+    expect(events).toHaveLength(3);
+    expect(events[0]).toEqual({ type: "degraded", tier: "throttle" });
+    expect(events[1]).toEqual({ type: "degraded", tier: "simplify" });
+    expect(events[2]).toEqual({ type: "restored", previousTier: "simplify" });
+  });
+});
+
 describe("non-browser environment", () => {
   it("does not crash when document is undefined", async () => {
     const { execSync } = await import("node:child_process");
