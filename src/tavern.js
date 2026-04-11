@@ -71,6 +71,7 @@
    * @property {string} [staleClass] - CSS class(es) applied when region becomes stale
    * @property {string} [liveClass] - CSS class(es) applied when region is live
    * @property {string} [commandDedup] - Dedup window in milliseconds for delegated commands
+   * @property {boolean} [hearth] - Shorthand flag that defaults commandDelegate and commandTarget for hot regions
    */
 
   /**
@@ -93,6 +94,7 @@
       hotPolicy: el.getAttribute("tavern-hot-policy"),
       staleClass: el.getAttribute("tavern-stale-class"),
       liveClass: el.getAttribute("tavern-live-class"),
+      hearth: el.hasAttribute("tavern-hearth"),
     };
   }
 
@@ -539,6 +541,12 @@
     el._tavernBound = true;
 
     const config = readConfig(el);
+
+    // tavern-hearth: apply hot-region command defaults
+    if (config.hearth) {
+      if (!config.commandDelegate) config.commandDelegate = "pointerdown";
+      if (!config.commandTarget) config.commandTarget = "[command-url]";
+    }
 
     debug(config, "binding to", el);
 

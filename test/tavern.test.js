@@ -2711,6 +2711,157 @@ describe("transport-closed", () => {
   });
 });
 
+describe("tavern-hearth", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+    globalThis.fetch = vi.fn();
+  });
+
+  /**
+   * Creates a child element with command-url and optional command-* attributes.
+   *
+   * @param {HTMLElement} parent - Parent element to append to
+   * @param {Object} [attrs] - Attributes to set on the child
+   * @returns {HTMLElement}
+   */
+  function createCommandChild(parent, attrs = {}) {
+    const child = document.createElement("button");
+    for (const [key, value] of Object.entries(attrs)) {
+      child.setAttribute(key, value);
+    }
+    parent.appendChild(child);
+    return child;
+  }
+
+  it("dispatches commands on pointerdown (default delegate)", () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({ "tavern-hearth": "" });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/tasks/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "42" }),
+    });
+  });
+
+  it("defaults target to [command-url]", () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({ "tavern-hearth": "" });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/archive",
+      "command-id": "7",
+    });
+
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/tasks/archive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "7" }),
+    });
+  });
+
+  it("suppresses follow-up click after pointerdown with dedup", () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({ "tavern-hearth": "", "tavern-command-dedup": "500" });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    child.click();
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("explicit tavern-command-delegate overrides hearth default", () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-hearth": "",
+      "tavern-command-delegate": "click",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    // pointerdown should NOT trigger because delegate was overridden to click
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+
+    // click should trigger
+    child.click();
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
+  it("explicit tavern-command-target overrides hearth default", () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-hearth": "",
+      "tavern-command-target": "[data-action]",
+    });
+    window.Tavern.bind(el);
+
+    // Child matches [data-action] but not [command-url]
+    const child = document.createElement("button");
+    child.setAttribute("data-action", "complete");
+    child.setAttribute("command-url", "/tasks/complete");
+    el.appendChild(child);
+
+    // Should use pointerdown (hearth default) but target [data-action]
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
+  it("non-command children are ignored", () => {
+    const el = createSSEElement({ "tavern-hearth": "" });
+    window.Tavern.bind(el);
+
+    const child = document.createElement("span");
+    child.textContent = "no command here";
+    el.appendChild(child);
+
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not error without any command-url children", () => {
+    const el = createSSEElement({ "tavern-hearth": "" });
+
+    expect(() => {
+      window.Tavern.bind(el);
+    }).not.toThrow();
+
+    // Dispatch events on the container itself — should not error
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    el.click();
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
+
 describe("non-browser environment", () => {
   it("does not crash when document is undefined", async () => {
     const { execSync } = await import("node:child_process");
