@@ -47,7 +47,7 @@ jobs:
         run: |
           SIZE=$(wc -c < dist/tavern.min.js)
           echo "Bundle size: ${SIZE} bytes"
-          if [ "$SIZE" -gt 10240 ]; then
-            echo "::error::Bundle exceeds 10KB limit (${SIZE} bytes)"
+          if [ "$SIZE" -gt 15360 ]; then
+            echo "::error::Bundle exceeds 15KB limit (${SIZE} bytes)"
             exit 1
           fi

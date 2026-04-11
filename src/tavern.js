@@ -35,6 +35,15 @@
   /** @type {string} SSE event name for backpressure tier changes */
   const EVT_BACKPRESSURE = "tavern-backpressure";
 
+  /** @type {string} Status attribute for live state */
+  const ATTR_LIVE = "tavern-status-live";
+
+  /** @type {string} Status attribute for stale state */
+  const ATTR_STALE = "tavern-status-stale";
+
+  /** @type {string} Status attribute for recovering state */
+  const ATTR_RECOVERING = "tavern-status-recovering";
+
   /** @type {MutationObserver|null} Active observer instance, if initialized */
   var _observer = null;
 
@@ -196,33 +205,21 @@
 
     debug(config, "region state:", oldState, "→", newState);
 
-    if (newState === "connecting") {
-      removeClasses(el, config.liveClass);
-      removeClasses(el, config.staleClass);
-      hideStatusByAttr(el, "tavern-status-live");
-      hideStatusByAttr(el, "tavern-status-stale");
-      hideStatusByAttr(el, "tavern-status-recovering");
-    } else if (newState === "live") {
+    // Common reset: remove both classes and hide all status indicators
+    removeClasses(el, config.liveClass);
+    removeClasses(el, config.staleClass);
+    hideStatusByAttr(el, ATTR_LIVE);
+    hideStatusByAttr(el, ATTR_STALE);
+    hideStatusByAttr(el, ATTR_RECOVERING);
+
+    if (newState === "live") {
       addClasses(el, config.liveClass);
-      removeClasses(el, config.staleClass);
-      showStatusByAttr(el, "tavern-status-live");
-      hideStatusByAttr(el, "tavern-status-stale");
-      hideStatusByAttr(el, "tavern-status-recovering");
+      showStatusByAttr(el, ATTR_LIVE);
       el.dispatchEvent(
         new CustomEvent("tavern:live", { bubbles: true, detail: detail || {} }),
       );
-    } else if (newState === "disconnected") {
-      removeClasses(el, config.liveClass);
-      removeClasses(el, config.staleClass);
-      hideStatusByAttr(el, "tavern-status-live");
-      hideStatusByAttr(el, "tavern-status-stale");
-      hideStatusByAttr(el, "tavern-status-recovering");
     } else if (newState === "recovering") {
-      removeClasses(el, config.liveClass);
-      removeClasses(el, config.staleClass);
-      hideStatusByAttr(el, "tavern-status-live");
-      hideStatusByAttr(el, "tavern-status-stale");
-      showStatusByAttr(el, "tavern-status-recovering");
+      showStatusByAttr(el, ATTR_RECOVERING);
       el.dispatchEvent(
         new CustomEvent("tavern:recovering", {
           bubbles: true,
@@ -231,10 +228,7 @@
       );
     } else if (newState === "stale") {
       addClasses(el, config.staleClass);
-      removeClasses(el, config.liveClass);
-      hideStatusByAttr(el, "tavern-status-live");
-      showStatusByAttr(el, "tavern-status-stale");
-      hideStatusByAttr(el, "tavern-status-recovering");
+      showStatusByAttr(el, ATTR_STALE);
       el.dispatchEvent(
         new CustomEvent("tavern:stale", {
           bubbles: true,
@@ -557,9 +551,9 @@
 
     // Initialize region state to "connecting" — not yet live until SSE opens
     el._tavernRegionState = "connecting";
-    hideStatusByAttr(el, "tavern-status-live");
-    hideStatusByAttr(el, "tavern-status-stale");
-    hideStatusByAttr(el, "tavern-status-recovering");
+    hideStatusByAttr(el, ATTR_LIVE);
+    hideStatusByAttr(el, ATTR_STALE);
+    hideStatusByAttr(el, ATTR_RECOVERING);
 
     // Lifeline registration
     if (config.role === "lifeline") {
