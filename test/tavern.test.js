@@ -2862,6 +2862,150 @@ describe("tavern-hearth", () => {
   });
 });
 
+describe("region-updated signals", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+  });
+
+  it("dispatches tavern:region-updated on htmx:afterSwap", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+
+    const events = [];
+    el.addEventListener("tavern:region-updated", () => events.push("updated"));
+
+    el.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true }));
+
+    expect(events).toEqual(["updated"]);
+  });
+
+  it("event bubbles", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+
+    const events = [];
+    document.addEventListener("tavern:region-updated", () => events.push("bubbled"));
+
+    el.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true }));
+
+    expect(events).toEqual(["bubbled"]);
+    document.removeEventListener("tavern:region-updated", () => {});
+  });
+
+  it("adds tavern-updated-class temporarily after swap", () => {
+    vi.useFakeTimers();
+    const el = createSSEElement({ "tavern-updated-class": "flash" });
+    window.Tavern.bind(el);
+
+    el.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true }));
+
+    expect(el.classList.contains("flash")).toBe(true);
+
+    vi.advanceTimersByTime(1000);
+
+    expect(el.classList.contains("flash")).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("removes class after configured tavern-updated-ms", () => {
+    vi.useFakeTimers();
+    const el = createSSEElement({
+      "tavern-updated-class": "highlight",
+      "tavern-updated-ms": "500",
+    });
+    window.Tavern.bind(el);
+
+    el.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true }));
+
+    expect(el.classList.contains("highlight")).toBe(true);
+
+    vi.advanceTimersByTime(499);
+    expect(el.classList.contains("highlight")).toBe(true);
+
+    vi.advanceTimersByTime(1);
+    expect(el.classList.contains("highlight")).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("restarts timer on repeated rapid updates", () => {
+    vi.useFakeTimers();
+    const el = createSSEElement({ "tavern-updated-class": "flash" });
+    window.Tavern.bind(el);
+
+    el.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true }));
+    vi.advanceTimersByTime(800);
+
+    // Second swap before timer expires — should restart
+    el.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true }));
+
+    expect(el.classList.contains("flash")).toBe(true);
+
+    // 800ms after second swap — still within new 1000ms window
+    vi.advanceTimersByTime(800);
+    expect(el.classList.contains("flash")).toBe(true);
+
+    // 200ms more — now 1000ms after second swap
+    vi.advanceTimersByTime(200);
+    expect(el.classList.contains("flash")).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("does not add class when tavern-updated-class is not configured", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+
+    el.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true }));
+
+    // No class should be added — className should remain empty
+    expect(el.className).toBe("");
+  });
+
+  it("fires event even without class config", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+
+    const events = [];
+    el.addEventListener("tavern:region-updated", () => events.push("fired"));
+
+    el.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true }));
+
+    expect(events).toEqual(["fired"]);
+  });
+
+  it("uses default 1000ms when tavern-updated-ms is not set", () => {
+    vi.useFakeTimers();
+    const el = createSSEElement({ "tavern-updated-class": "glow" });
+    window.Tavern.bind(el);
+
+    el.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true }));
+
+    vi.advanceTimersByTime(999);
+    expect(el.classList.contains("glow")).toBe(true);
+
+    vi.advanceTimersByTime(1);
+    expect(el.classList.contains("glow")).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("supports multiple space-separated classes", () => {
+    vi.useFakeTimers();
+    const el = createSSEElement({ "tavern-updated-class": "flash highlight" });
+    window.Tavern.bind(el);
+
+    el.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true }));
+
+    expect(el.classList.contains("flash")).toBe(true);
+    expect(el.classList.contains("highlight")).toBe(true);
+
+    vi.advanceTimersByTime(1000);
+
+    expect(el.classList.contains("flash")).toBe(false);
+    expect(el.classList.contains("highlight")).toBe(false);
+    vi.useRealTimers();
+  });
+});
+
 describe("non-browser environment", () => {
   it("does not crash when document is undefined", async () => {
     const { execSync } = await import("node:child_process");
