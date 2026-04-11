@@ -2260,6 +2260,204 @@ describe("delegated commands — pointerdown, dedup, URL expansion", () => {
   });
 });
 
+describe("pointerdown delegated command — internal click suppression", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+    globalThis.fetch = vi.fn();
+  });
+
+  /**
+   * Creates a child element with command-url and optional command-* attributes.
+   *
+   * @param {HTMLElement} parent - Parent element to append to
+   * @param {Object} [attrs] - Attributes to set on the child
+   * @returns {HTMLElement}
+   */
+  function createCommandChild(parent, attrs = {}) {
+    const child = document.createElement("button");
+    for (const [key, value] of Object.entries(attrs)) {
+      child.setAttribute(key, value);
+    }
+    parent.appendChild(child);
+    return child;
+  }
+
+  it("click delegate dispatches once on click (unchanged behavior)", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    child.click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("pointerdown delegate dispatches once on pointerdown→click sequence", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "pointerdown",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    // Normal pointer interaction: pointerdown followed by click
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    child.click();
+
+    // Should only dispatch ONCE — the click is internally suppressed
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("pointerdown delegate dispatches on pointerdown alone (no click follows)", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "pointerdown",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith("/tasks/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "42" }),
+    });
+  });
+
+  it("explicit tavern-command-dedup still works independently", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+      "tavern-command-dedup": "500",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    child.click();
+    child.click();
+
+    // Second click suppressed by dedup
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("after suppression window expires, a new click dispatches", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    let fakeNow = 1000;
+    const origNow = Date.now;
+    Date.now = () => fakeNow;
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "pointerdown",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    // pointerdown fires at t=1000
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    // Immediate click at t=1010 is suppressed (within 500ms window)
+    fakeNow = 1010;
+    child.click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    // New click at t=1600 — past the 500ms window — should dispatch
+    fakeNow = 1600;
+    child.click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+
+    Date.now = origNow;
+  });
+
+  it("different target on follow-up click is NOT suppressed", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "pointerdown",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child1 = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+    const child2 = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "99",
+    });
+
+    // pointerdown on child1
+    child1.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    // click on child2 — different target, should NOT be suppressed
+    child2.click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("different URL on follow-up click is NOT suppressed", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "pointerdown",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    // pointerdown fires
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    // Change the URL before the click
+    child.setAttribute("command-url", "/tasks/delete");
+
+    // click with different URL — should NOT be suppressed
+    child.click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("backpressure / degradation signals", () => {
   beforeEach(async () => {
     document.body.innerHTML = "";

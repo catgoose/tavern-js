@@ -943,6 +943,12 @@
 
     debug(config, "binding delegated commands", eventType, selector);
 
+    /** @type {{ target: HTMLElement, url: string, timestamp: number }|null} */
+    let _lastPointerdownDispatch = null;
+
+    /** @type {number} Internal suppression window in ms for pointerdown→click */
+    const POINTERDOWN_SUPPRESS_MS = 500;
+
     /**
      * Checks the dedup window and suppresses if a matching command was
      * recently dispatched. Returns true if the command should be suppressed.
@@ -956,6 +962,27 @@
       const last = target._tavernLastCommand;
       if (last && last.url === url && (Date.now() - last.timestamp) < dedupMs) {
         debug(config, "dedup suppressed command to", url);
+        return true;
+      }
+      return false;
+    }
+
+    /**
+     * Checks whether a click should be internally suppressed because a
+     * pointerdown on the same target with the same URL already dispatched
+     * within the suppression window. This is independent of the user-configured
+     * tavern-command-dedup and only applies to the pointerdown delegate path.
+     *
+     * @param {HTMLElement} target - The matched command element
+     * @param {string} url - The resolved command URL
+     * @returns {boolean} True if the click should be suppressed
+     */
+    function shouldSuppressClickAfterPointerdown(target, url) {
+      if (!_lastPointerdownDispatch) return false;
+      const last = _lastPointerdownDispatch;
+      if (last.target === target && last.url === url &&
+          (Date.now() - last.timestamp) < POINTERDOWN_SUPPRESS_MS) {
+        debug(config, "suppressed click after pointerdown for", url);
         return true;
       }
       return false;
@@ -987,8 +1014,16 @@
       const url = expandCommandUrl(target, rawUrl, config);
       const body = collectCommandAttrs(target);
 
+      // Internal suppression: skip click that follows a recent pointerdown dispatch
+      if (e.type === "click" && shouldSuppressClickAfterPointerdown(target, url)) return;
+
       if (shouldDedup(target, url)) return;
       recordCommand(target, url);
+
+      // Record pointerdown dispatch for internal click suppression
+      if (e.type === "pointerdown") {
+        _lastPointerdownDispatch = { target: target, url: url, timestamp: Date.now() };
+      }
 
       target.dispatchEvent(
         new CustomEvent("tavern:command-sent", {
@@ -1019,9 +1054,10 @@
 
     el.addEventListener(eventType, handleCommand);
 
-    // When delegate is pointerdown, also listen for click to handle dedup.
-    // A pointerdown followed by click on the same target would otherwise
-    // double-fire the command.
+    // When delegate is pointerdown, also listen for click so that clicks
+    // still work as a fallback (e.g. keyboard-triggered clicks). The
+    // internal suppression above prevents the duplicate dispatch when both
+    // pointerdown and click fire from the same user interaction.
     if (eventType === "pointerdown") {
       el.addEventListener("click", handleCommand);
     }
