@@ -72,6 +72,8 @@
    * @property {string} [liveClass] - CSS class(es) applied when region is live
    * @property {string} [commandDedup] - Dedup window in milliseconds for delegated commands
    * @property {boolean} [hearth] - Shorthand flag that defaults commandDelegate and commandTarget for hot regions
+   * @property {string} [updatedClass] - CSS class(es) temporarily added after a live SSE swap
+   * @property {number} [updatedMs] - Duration in ms to keep updatedClass applied (default: 1000)
    */
 
   /**
@@ -95,6 +97,8 @@
       staleClass: el.getAttribute("tavern-stale-class"),
       liveClass: el.getAttribute("tavern-live-class"),
       hearth: el.hasAttribute("tavern-hearth"),
+      updatedClass: el.getAttribute("tavern-updated-class"),
+      updatedMs: parseInt(el.getAttribute("tavern-updated-ms"), 10) || 1000,
     };
   }
 
@@ -592,6 +596,25 @@
     if (config.hotPolicy) {
       bindHotPolicy(el, config);
     }
+
+    // Region-updated signals for live SSE swaps
+    /** @type {number|null} Timer handle for removing updatedClass */
+    let updateTimer = null;
+
+    el.addEventListener("htmx:afterSwap", function () {
+      el.dispatchEvent(
+        new CustomEvent("tavern:region-updated", { bubbles: true }),
+      );
+
+      if (config.updatedClass) {
+        addClasses(el, config.updatedClass);
+        if (updateTimer) clearTimeout(updateTimer);
+        updateTimer = setTimeout(function () {
+          removeClasses(el, config.updatedClass);
+          updateTimer = null;
+        }, config.updatedMs);
+      }
+    });
 
     // HTMX SSE lifecycle events
     el.addEventListener("htmx:sseError", function () {

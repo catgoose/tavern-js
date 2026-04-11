@@ -95,6 +95,8 @@ Configure behavior declaratively on any `sse-connect` element:
 | `tavern-debug` | flag | Enable `console.debug` logging for this element. |
 | `tavern-hot-policy` | space-separated keywords | Interaction protection policies: `pause-on-pointerdown`, `defer-on-focus`. See [Hot-Region Interaction Protection](#hot-region-interaction-protection). |
 | `tavern-hearth` | flag | Shorthand for hot-region commands: defaults `commandDelegate` to `"pointerdown"` and `commandTarget` to `"[command-url]"`. See [Hearth](#hearth-hot-region-shorthand). |
+| `tavern-updated-class` | CSS class(es) | Temporarily added after a live SSE swap, removed after `tavern-updated-ms`. Space-separated for multiple classes. |
+| `tavern-updated-ms` | number (ms) | Duration to keep `tavern-updated-class` applied (default: 1000). |
 
 ### Stale / Live Region State
 
@@ -178,6 +180,7 @@ tavern.js dispatches bubbling custom events for programmatic handling:
 | `tavern:stream-restored` | `{ previousTier, topic, scope }` | Backpressure tier returned to normal |
 | `tavern:transport-open` | — | SSE transport reopened after a disconnect |
 | `tavern:transport-closed` | — | SSE transport dropped (raw transport fact, no UI implications) |
+| `tavern:region-updated` | — | A live SSE swap occurred on the bound region |
 
 ```javascript
 document.addEventListener("tavern:disconnected", (e) => {
@@ -258,6 +261,30 @@ document.addEventListener("tavern:transport-open", () => {
   shellIndicator.classList.remove("offline");
 });
 ```
+
+### Region Updated Signals
+
+When a live SSE swap occurs (`htmx:afterSwap`), tavern.js dispatches
+`tavern:region-updated` on the bound element. Optionally, a CSS class can
+be added temporarily for visual feedback.
+
+```html
+<div sse-connect="/sse/feed"
+     sse-swap="post"
+     tavern-updated-class="ring ring-blue-300"
+     tavern-updated-ms="500">
+</div>
+```
+
+```javascript
+// Observe updates programmatically
+document.addEventListener("tavern:region-updated", (e) => {
+  console.log("Region updated:", e.target.id);
+});
+```
+
+On repeated updates the timer restarts — the class is removed only after
+the configured duration has elapsed since the last swap.
 
 ## Commands
 
