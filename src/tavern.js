@@ -45,13 +45,13 @@
   const ATTR_RECOVERING = "tavern-status-recovering";
 
   /** @type {MutationObserver|null} Active observer instance, if initialized */
-  var _observer = null;
+  let _observer = null;
 
   /** @type {boolean} Whether tavern has been initialized */
-  var _initialized = false;
+  let _initialized = false;
 
   /** @type {HTMLElement|null} The lifeline element, if registered */
-  var _lifeline = null;
+  let _lifeline = null;
 
   /**
    * @typedef {Object} StreamEntry
@@ -60,7 +60,7 @@
    */
 
   /** @type {Object.<string, StreamEntry>} Map of scope name to stream entry */
-  var _streams = {};
+  let _streams = {};
 
   /**
    * @typedef {Object} TavernConfig
@@ -198,7 +198,7 @@
    * @param {Object} [detail] - Optional detail for dispatched events
    */
   function setRegionState(el, config, newState, detail) {
-    var oldState = el._tavernRegionState;
+    const oldState = el._tavernRegionState;
     if (oldState === newState) return;
 
     el._tavernRegionState = newState;
@@ -309,7 +309,7 @@
   function handleReplayGap(el, config, detail) {
     debug(config, "replay gap detected, detail:", detail);
 
-    var action = config.gapAction;
+    const action = config.gapAction;
     if (!action) {
       setRegionState(el, config, "stale", { reason: "replay-gap" });
       el.dispatchEvent(
@@ -353,15 +353,15 @@
     // Avoid duplicate banners
     if (el.querySelector("[tavern-gap-banner]")) return;
 
-    var wrapper = document.createElement("div");
+    const wrapper = document.createElement("div");
     wrapper.setAttribute("tavern-gap-banner", "");
 
-    var msg = document.createElement("span");
+    const msg = document.createElement("span");
     msg.setAttribute("role", "alert");
     msg.textContent =
       config.gapBannerText || "Connection interrupted — some events were missed.";
 
-    var btn = document.createElement("button");
+    const btn = document.createElement("button");
     btn.setAttribute("type", "button");
     btn.textContent = "Refresh";
     btn.style.cursor = "pointer";
@@ -417,12 +417,8 @@
    * @param {string} data - JSON payload from the server
    */
   function handleTopicsChanged(el, config, data) {
-    var detail = {};
-    try {
-      detail = JSON.parse(data);
-    } catch (_) {
-      detail = { raw: data };
-    }
+    const parsed = safeParseJSON(data);
+    const detail = Object.keys(parsed).length > 0 ? parsed : { raw: data };
 
     debug(config, "topics changed", detail);
 
@@ -474,23 +470,23 @@
 
     // Create stable references so they can be removed later.
     el._tavernOnReconnected = function (e) {
-      var detail = safeParseJSON(e.data);
+      const detail = safeParseJSON(e.data);
       markReconnected(el, config, detail);
     };
     el._tavernOnReplayGap = function (e) {
-      var detail = safeParseJSON(e.data);
+      const detail = safeParseJSON(e.data);
       handleReplayGap(el, config, detail);
     };
     el._tavernOnReplayTruncated = function (e) {
-      var detail = safeParseJSON(e.data);
+      const detail = safeParseJSON(e.data);
       handleReplayTruncated(el, config, detail);
     };
     el._tavernOnTopicsChanged = function (e) {
       handleTopicsChanged(el, config, e.data || "");
     };
     el._tavernOnBackpressure = function (e) {
-      var data = safeParseJSON(e.data);
-      var detail = {
+      const data = safeParseJSON(e.data);
+      const detail = {
         tier: data.tier || "unknown",
         previousTier: data.previousTier || "unknown",
         topic: data.topic || null,
@@ -542,7 +538,7 @@
     if (el._tavernBound) return;
     el._tavernBound = true;
 
-    var config = readConfig(el);
+    const config = readConfig(el);
 
     debug(config, "binding to", el);
 
@@ -567,7 +563,7 @@
 
     // Scoped stream registration
     if (config.role === "scoped" && config.scope) {
-      var existing = _streams[config.scope];
+      const existing = _streams[config.scope];
       if (existing && existing.el !== el && document.body.contains(existing.el)) {
         console.warn(
           "[tavern] duplicate scope '" + config.scope + "' ignored — already owned by another element",
@@ -604,7 +600,7 @@
 
       // Scoped stream fallback logic — only act if this element still owns the scope
       if (config.role === "scoped" && config.scope) {
-        var entry = _streams[config.scope];
+        const entry = _streams[config.scope];
         if (entry && entry.el === el) {
           if (entry.state === "active" && _lifeline) {
             _lifeline.dispatchEvent(
@@ -641,7 +637,7 @@
 
       // Scoped stream transitions to "ready" on sseOpen — only if this element owns the scope
       if (config.role === "scoped" && config.scope) {
-        var entry = _streams[config.scope];
+        const entry = _streams[config.scope];
         if (entry && entry.el === el && entry.state === "warming") {
           entry.state = "ready";
           el.dispatchEvent(
@@ -656,7 +652,7 @@
       // Attach control event listeners to the EventSource. HTMX creates a
       // new EventSource on each reconnect, so we must re-attach each time.
       // bindControlEvents deduplicates by source identity.
-      var source = e.detail && e.detail.source;
+      const source = e.detail && e.detail.source;
       if (source) {
         bindControlEvents(el, config, source);
       }
@@ -676,11 +672,11 @@
    * listeners automatically.
    */
   function observe() {
-    var observer = new MutationObserver(function (mutations) {
-      for (var i = 0; i < mutations.length; i++) {
-        var added = mutations[i].addedNodes;
-        for (var j = 0; j < added.length; j++) {
-          var node = added[j];
+    const observer = new MutationObserver(function (mutations) {
+      for (let i = 0; i < mutations.length; i++) {
+        const added = mutations[i].addedNodes;
+        for (let j = 0; j < added.length; j++) {
+          const node = added[j];
           if (node.nodeType !== 1) continue;
 
           if (node.hasAttribute && node.hasAttribute("sse-connect")) {
@@ -708,7 +704,7 @@
    * @returns {boolean} True if the stream was promoted, false if not found or not promotable
    */
   function promote(name) {
-    var entry = _streams[name];
+    const entry = _streams[name];
     if (!entry) return false;
     entry.state = "active";
     entry.el.dispatchEvent(
@@ -728,7 +724,7 @@
    * @returns {boolean} True if the stream was retired, false if not found
    */
   function retire(name) {
-    var entry = _streams[name];
+    const entry = _streams[name];
     if (!entry) return false;
     entry.state = "retired";
     entry.el.dispatchEvent(
@@ -760,7 +756,7 @@
    * @returns {{ el: HTMLElement, state: string }|null} Stream info or null
    */
   function getStream(name) {
-    var entry = _streams[name];
+    const entry = _streams[name];
     if (!entry) return null;
     return { el: entry.el, state: entry.state };
   }
@@ -771,8 +767,8 @@
    * @returns {Object.<string, { el: HTMLElement, state: string }>} All streams
    */
   function getStreams() {
-    var copy = {};
-    for (var key in _streams) {
+    const copy = {};
+    for (const key in _streams) {
       if (_streams.hasOwnProperty(key)) {
         copy[key] = { el: _streams[key].el, state: _streams[key].state };
       }
@@ -826,16 +822,16 @@
    * @returns {Promise<Response>} Resolves on 2xx, rejects on error or non-2xx
    */
   function command(url, body, options) {
-    var opts = options || {};
-    var headers = { "Content-Type": "application/json" };
+    const opts = options || {};
+    const headers = { "Content-Type": "application/json" };
     if (opts.headers) {
-      for (var key in opts.headers) {
+      for (const key in opts.headers) {
         if (opts.headers.hasOwnProperty(key)) {
           headers[key] = opts.headers[key];
         }
       }
     }
-    var fetchOpts = {
+    const fetchOpts = {
       method: "POST",
       headers: headers,
       body: JSON.stringify(body || {}),
@@ -861,13 +857,13 @@
    * @returns {Object} Key-value pairs, e.g. { id: "42", action: "complete" }
    */
   function collectCommandAttrs(el) {
-    var result = {};
-    var attrs = el.attributes;
-    for (var i = 0; i < attrs.length; i++) {
-      var name = attrs[i].name;
+    const result = {};
+    const attrs = el.attributes;
+    for (let i = 0; i < attrs.length; i++) {
+      const name = attrs[i].name;
       if (name === "command-url") continue;
       if (name.indexOf("command-") === 0) {
-        var key = name.slice(8); // strip "command-"
+        const key = name.slice(8); // strip "command-"
         result[key] = attrs[i].value;
       }
     }
@@ -875,7 +871,7 @@
   }
 
   /** @type {string[]} Known hot-policy keywords */
-  var KNOWN_HOT_POLICIES = ["pause-on-pointerdown", "defer-on-focus"];
+  const KNOWN_HOT_POLICIES = ["pause-on-pointerdown", "defer-on-focus"];
 
   /**
    * Parses a space-separated hot-policy string into an array of valid
@@ -886,9 +882,9 @@
    */
   function parseHotPolicies(str) {
     if (!str) return [];
-    var tokens = str.trim().split(/\s+/);
-    var result = [];
-    for (var i = 0; i < tokens.length; i++) {
+    const tokens = str.trim().split(/\s+/);
+    const result = [];
+    for (let i = 0; i < tokens.length; i++) {
       if (KNOWN_HOT_POLICIES.indexOf(tokens[i]) !== -1) {
         result.push(tokens[i]);
       } else if (tokens[i]) {
@@ -910,7 +906,7 @@
    */
   function expandCommandUrl(el, url, config) {
     return url.replace(/\{([^}]+)\}/g, function (match, name) {
-      var val = el.getAttribute("command-" + name);
+      let val = el.getAttribute("command-" + name);
       if (val !== null) return val;
       val = el.getAttribute("data-" + name);
       if (val !== null) return val;
@@ -941,9 +937,9 @@
   function bindDelegatedCommands(el, config) {
     if (!config.commandDelegate || !config.commandTarget) return;
 
-    var eventType = config.commandDelegate;
-    var selector = config.commandTarget;
-    var dedupMs = config.commandDedup ? parseInt(config.commandDedup, 10) : 0;
+    const eventType = config.commandDelegate;
+    const selector = config.commandTarget;
+    const dedupMs = config.commandDedup ? parseInt(config.commandDedup, 10) : 0;
 
     debug(config, "binding delegated commands", eventType, selector);
 
@@ -957,7 +953,7 @@
      */
     function shouldDedup(target, url) {
       if (!dedupMs) return false;
-      var last = target._tavernLastCommand;
+      const last = target._tavernLastCommand;
       if (last && last.url === url && (Date.now() - last.timestamp) < dedupMs) {
         debug(config, "dedup suppressed command to", url);
         return true;
@@ -982,14 +978,14 @@
      * @param {Event} e - The DOM event
      */
     function handleCommand(e) {
-      var target = e.target.closest(selector);
+      const target = e.target.closest(selector);
       if (!target || !el.contains(target)) return;
 
-      var rawUrl = target.getAttribute("command-url");
+      const rawUrl = target.getAttribute("command-url");
       if (!rawUrl) return;
 
-      var url = expandCommandUrl(target, rawUrl, config);
-      var body = collectCommandAttrs(target);
+      const url = expandCommandUrl(target, rawUrl, config);
+      const body = collectCommandAttrs(target);
 
       if (shouldDedup(target, url)) return;
       recordCommand(target, url);
@@ -1044,17 +1040,17 @@
    * @param {TavernConfig} config - Current configuration
    */
   function bindHotPolicy(el, config) {
-    var policies = parseHotPolicies(config.hotPolicy);
+    const policies = parseHotPolicies(config.hotPolicy);
     if (policies.length === 0) return;
 
     /** @type {boolean} Whether pointer is currently held down inside the region */
-    var pointerActive = false;
+    let pointerActive = false;
 
     /** @type {boolean} Whether a focusable element inside the region has focus */
-    var focusActive = false;
+    let focusActive = false;
 
     /** @type {Array<{ type: string, data: * }>} Queued SSE messages */
-    var queue = [];
+    let queue = [];
 
     /**
      * Returns true if any policy is currently suppressing swaps.
@@ -1090,7 +1086,7 @@
     function deactivatePolicy(policy) {
       if (isSuppressing()) return; // Another policy still active
 
-      var flushed = queue.length;
+      const flushed = queue.length;
       queue = [];
 
       debug(config, "hot-policy deactivated:", policy, "flushed:", flushed);
@@ -1142,7 +1138,7 @@
         // relatedTarget is the element receiving focus — if it's inside
         // the region, focus hasn't truly left.
         if (focusActive) {
-          var next = e.relatedTarget;
+          const next = e.relatedTarget;
           if (!next || !el.contains(next)) {
             focusActive = false;
             deactivatePolicy("defer-on-focus");
@@ -1157,13 +1153,13 @@
 
       evt.preventDefault();
 
-      var detail = evt.detail || {};
-      var sseType = detail.type || "";
-      var sseData = detail.data;
+      const detail = evt.detail || {};
+      const sseType = detail.type || "";
+      const sseData = detail.data;
 
       // Keep only the last message per SSE event type (dedup)
-      var found = false;
-      for (var i = 0; i < queue.length; i++) {
+      let found = false;
+      for (let i = 0; i < queue.length; i++) {
         if (queue[i].type === sseType) {
           queue[i].data = sseData;
           found = true;
