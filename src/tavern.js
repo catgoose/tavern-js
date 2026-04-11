@@ -67,6 +67,8 @@
       debug: el.hasAttribute("tavern-debug"),
       role: el.getAttribute("tavern-role"),
       scope: el.getAttribute("tavern-scope"),
+      commandDelegate: el.getAttribute("tavern-command-delegate"),
+      commandTarget: el.getAttribute("tavern-command-target"),
     };
   }
 
@@ -326,6 +328,9 @@
     var config = readConfig(el);
 
     debug(config, "binding to", el);
+
+    // Delegated commands
+    bindDelegatedCommands(el, config);
 
     // Lifeline registration
     if (config.role === "lifeline") {
@@ -602,6 +607,84 @@
         );
       }
       return response;
+    });
+  }
+
+  /**
+   * Collects command-* attributes from an element into a plain object,
+   * excluding command-url which is used as the endpoint.
+   *
+   * @param {HTMLElement} el - The element to read attributes from
+   * @returns {Object} Key-value pairs, e.g. { id: "42", action: "complete" }
+   */
+  function collectCommandAttrs(el) {
+    var result = {};
+    var attrs = el.attributes;
+    for (var i = 0; i < attrs.length; i++) {
+      var name = attrs[i].name;
+      if (name === "command-url") continue;
+      if (name.indexOf("command-") === 0) {
+        var key = name.slice(8); // strip "command-"
+        result[key] = attrs[i].value;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Binds a delegated event listener on a parent element for declarative
+   * command dispatching. Reads `tavern-command-delegate` (event type) and
+   * `tavern-command-target` (CSS selector for closest()) from the element.
+   *
+   * When the delegated event fires, the listener finds the nearest matching
+   * ancestor of the event target, reads its `command-url` and `command-*`
+   * attributes, and calls `command()`.
+   *
+   * @param {HTMLElement} el - The SSE-connected parent element
+   * @param {TavernConfig} config - Current configuration
+   */
+  function bindDelegatedCommands(el, config) {
+    if (!config.commandDelegate || !config.commandTarget) return;
+
+    var eventType = config.commandDelegate;
+    var selector = config.commandTarget;
+
+    debug(config, "binding delegated commands", eventType, selector);
+
+    el.addEventListener(eventType, function (e) {
+      var target = e.target.closest(selector);
+      if (!target) return;
+
+      var url = target.getAttribute("command-url");
+      if (!url) return;
+
+      var body = collectCommandAttrs(target);
+
+      target.dispatchEvent(
+        new CustomEvent("tavern:command-sent", {
+          bubbles: true,
+          detail: { url: url, body: body },
+        }),
+      );
+
+      command(url, body).then(
+        function (response) {
+          target.dispatchEvent(
+            new CustomEvent("tavern:command-success", {
+              bubbles: true,
+              detail: { url: url, body: body, response: response },
+            }),
+          );
+        },
+        function (error) {
+          target.dispatchEvent(
+            new CustomEvent("tavern:command-error", {
+              bubbles: true,
+              detail: { url: url, body: body, error: error },
+            }),
+          );
+        },
+      );
     });
   }
 

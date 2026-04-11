@@ -191,6 +191,50 @@ contains UI state.
 > **Note:** `Tavern.command()` is an escape hatch for hotspot interactions,
 > not a replacement for normal forms or `hx-post`.
 
+## Delegated Commands
+
+For common cases where every interactive element in a hot region follows the
+same pattern (click a button, POST to its URL, send its data attributes),
+tavern.js offers a fully declarative alternative — no JavaScript required.
+
+Add two attributes to the stable `sse-connect` parent:
+
+| Attribute | Description |
+|---|---|
+| `tavern-command-delegate` | Event type to listen for (e.g. `"click"`) |
+| `tavern-command-target` | CSS selector passed to `closest()` on the event target |
+
+Each matching child carries its own `command-url` (the POST endpoint) and any
+number of `command-*` data attributes that become the JSON body:
+
+```html
+<div id="task-list"
+     sse-connect="/sse/tasks"
+     sse-swap="tasks"
+     tavern-command-delegate="click"
+     tavern-command-target="[command-url]">
+
+  <!-- Rendered by SSE — buttons are ephemeral -->
+  <button command-url="/tasks/complete" command-id="42">Done</button>
+  <button command-url="/tasks/delete"   command-id="42">Remove</button>
+</div>
+```
+
+When the user clicks a button:
+
+1. `closest("[command-url]")` finds the nearest matching element
+2. `command-url` is read as the POST endpoint
+3. All other `command-*` attributes become the JSON body (`command-id="42"` becomes `{ "id": "42" }`)
+4. `Tavern.command(url, body)` is called automatically
+
+### Delegated Command Events
+
+| Event | Dispatched on | `detail` | When |
+|---|---|---|---|
+| `tavern:command-sent` | matched element | `{ url, body }` | Immediately before the POST |
+| `tavern:command-success` | matched element | `{ url, body, response }` | POST returned 2xx |
+| `tavern:command-error` | matched element | `{ url, body, error }` | POST failed or returned non-2xx |
+
 ## Programmatic API
 
 tavern.js auto-initializes when the DOM is ready — you do not need to call
