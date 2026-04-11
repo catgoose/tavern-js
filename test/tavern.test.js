@@ -2429,6 +2429,90 @@ describe("backpressure / degradation signals", () => {
   });
 });
 
+describe("transport-closed", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+  });
+
+  it("fires on SSE error after connection was open", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+
+    // Establish a connection first
+    simulateSSEOpen(el);
+    expect(el._tavernRegionState).toBe("live");
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:transport-closed", spy);
+
+    el.dispatchEvent(new CustomEvent("htmx:sseError"));
+    expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT fire before first connection (state is connecting)", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+    expect(el._tavernRegionState).toBe("connecting");
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:transport-closed", spy);
+
+    el.dispatchEvent(new CustomEvent("htmx:sseError"));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("fires BEFORE tavern:disconnected", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+
+    simulateSSEOpen(el);
+
+    /** @type {string[]} */
+    const order = [];
+    el.addEventListener("tavern:transport-closed", () => order.push("transport-closed"));
+    el.addEventListener("tavern:disconnected", () => order.push("disconnected"));
+
+    el.dispatchEvent(new CustomEvent("htmx:sseError"));
+    expect(order).toEqual(["transport-closed", "disconnected"]);
+  });
+
+  it("forms a symmetric pair with transport-open on reconnect", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+
+    const source = simulateSSEOpen(el);
+
+    /** @type {string[]} */
+    const events = [];
+    el.addEventListener("tavern:transport-closed", () => events.push("closed"));
+    el.addEventListener("tavern:transport-open", () => events.push("open"));
+
+    // Disconnect
+    el.dispatchEvent(new CustomEvent("htmx:sseError"));
+
+    // Reconnect — transport-open fires when SSE reopens after a disconnect
+    simulateSSEOpen(el, createMockEventSource());
+
+    expect(events).toEqual(["closed", "open"]);
+  });
+
+  it("bubbles", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+
+    simulateSSEOpen(el);
+
+    const spy = vi.fn();
+    document.body.addEventListener("tavern:transport-closed", spy);
+
+    el.dispatchEvent(new CustomEvent("htmx:sseError"));
+    expect(spy).toHaveBeenCalledOnce();
+
+    document.body.removeEventListener("tavern:transport-closed", spy);
+  });
+});
+
 describe("non-browser environment", () => {
   it("does not crash when document is undefined", async () => {
     const { execSync } = await import("node:child_process");
