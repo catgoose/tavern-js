@@ -69,6 +69,7 @@
       scope: el.getAttribute("tavern-scope"),
       commandDelegate: el.getAttribute("tavern-command-delegate"),
       commandTarget: el.getAttribute("tavern-command-target"),
+      hotPolicy: el.getAttribute("tavern-hot-policy"),
     };
   }
 
@@ -361,6 +362,11 @@
       }
     }
 
+    // Hot-region interaction protection
+    if (config.hotPolicy) {
+      bindHotPolicy(el, config);
+    }
+
     // HTMX SSE lifecycle events
     el.addEventListener("htmx:sseError", function () {
       markDisconnected(el, config);
@@ -631,6 +637,30 @@
     return result;
   }
 
+  /** @type {string[]} Known hot-policy keywords */
+  var KNOWN_HOT_POLICIES = ["pause-on-pointerdown", "defer-on-focus"];
+
+  /**
+   * Parses a space-separated hot-policy string into an array of valid
+   * policy keywords. Unknown keywords are logged as warnings and ignored.
+   *
+   * @param {string} str - Space-separated policy keywords
+   * @returns {string[]} Array of valid policy keywords
+   */
+  function parseHotPolicies(str) {
+    if (!str) return [];
+    var tokens = str.trim().split(/\s+/);
+    var result = [];
+    for (var i = 0; i < tokens.length; i++) {
+      if (KNOWN_HOT_POLICIES.indexOf(tokens[i]) !== -1) {
+        result.push(tokens[i]);
+      } else if (tokens[i]) {
+        console.warn("[tavern] unknown hot-policy keyword: " + tokens[i]);
+      }
+    }
+    return result;
+  }
+
   /**
    * Binds a delegated event listener on a parent element for declarative
    * command dispatching. Reads `tavern-command-delegate` (event type) and
@@ -685,6 +715,150 @@
           );
         },
       );
+    });
+  }
+
+  /**
+   * Binds hot-region interaction protection to an SSE-connected element.
+   *
+   * When a policy is active (pointer held down or focus inside the region),
+   * incoming `htmx:sseBeforeMessage` events are intercepted via
+   * `preventDefault()` and their data is queued. When the interaction ends,
+   * the queue is discarded (the next natural SSE message will bring current
+   * state) and a `tavern:policy-deactivated` event is dispatched.
+   *
+   * @param {HTMLElement} el - The SSE-connected element
+   * @param {TavernConfig} config - Current configuration
+   */
+  function bindHotPolicy(el, config) {
+    var policies = parseHotPolicies(config.hotPolicy);
+    if (policies.length === 0) return;
+
+    /** @type {boolean} Whether pointer is currently held down inside the region */
+    var pointerActive = false;
+
+    /** @type {boolean} Whether a focusable element inside the region has focus */
+    var focusActive = false;
+
+    /** @type {Array<{ type: string, data: * }>} Queued SSE messages */
+    var queue = [];
+
+    /**
+     * Returns true if any policy is currently suppressing swaps.
+     *
+     * @returns {boolean}
+     */
+    function isSuppressing() {
+      return pointerActive || focusActive;
+    }
+
+    /**
+     * Dispatches `tavern:policy-activated` on the element.
+     *
+     * @param {string} policy - The policy keyword that activated
+     */
+    function activatePolicy(policy) {
+      debug(config, "hot-policy activated:", policy);
+      el.dispatchEvent(
+        new CustomEvent("tavern:policy-activated", {
+          bubbles: true,
+          detail: { policy: policy },
+        }),
+      );
+    }
+
+    /**
+     * Flushes the queue and dispatches `tavern:policy-deactivated`.
+     * The queue is cleared — the next natural SSE message brings current
+     * content, so replaying stale messages is unnecessary.
+     *
+     * @param {string} policy - The policy keyword that deactivated
+     */
+    function deactivatePolicy(policy) {
+      if (isSuppressing()) return; // Another policy still active
+
+      var flushed = queue.length;
+      queue = [];
+
+      debug(config, "hot-policy deactivated:", policy, "flushed:", flushed);
+      el.dispatchEvent(
+        new CustomEvent("tavern:policy-deactivated", {
+          bubbles: true,
+          detail: { policy: policy, flushed: flushed },
+        }),
+      );
+    }
+
+    // --- pause-on-pointerdown ---
+    if (policies.indexOf("pause-on-pointerdown") !== -1) {
+      el.addEventListener("pointerdown", function () {
+        if (!pointerActive) {
+          pointerActive = true;
+          activatePolicy("pause-on-pointerdown");
+        }
+      });
+
+      /**
+       * Handles pointer release or cancellation.
+       */
+      function onPointerEnd() {
+        if (pointerActive) {
+          pointerActive = false;
+          deactivatePolicy("pause-on-pointerdown");
+        }
+      }
+
+      el.addEventListener("pointerup", onPointerEnd);
+      el.addEventListener("pointercancel", onPointerEnd);
+    }
+
+    // --- defer-on-focus ---
+    if (policies.indexOf("defer-on-focus") !== -1) {
+      el.addEventListener("focusin", function () {
+        if (!focusActive) {
+          focusActive = true;
+          activatePolicy("defer-on-focus");
+        }
+      });
+
+      el.addEventListener("focusout", function (e) {
+        // Only deactivate if focus is leaving the region entirely.
+        // relatedTarget is the element receiving focus — if it's inside
+        // the region, focus hasn't truly left.
+        if (focusActive) {
+          var next = e.relatedTarget;
+          if (!next || !el.contains(next)) {
+            focusActive = false;
+            deactivatePolicy("defer-on-focus");
+          }
+        }
+      });
+    }
+
+    // --- htmx:sseBeforeMessage interception ---
+    el.addEventListener("htmx:sseBeforeMessage", function (evt) {
+      if (!isSuppressing()) return;
+
+      evt.preventDefault();
+
+      var detail = evt.detail || {};
+      var sseType = detail.type || "";
+      var sseData = detail.data;
+
+      // Keep only the last message per SSE event type (dedup)
+      var found = false;
+      for (var i = 0; i < queue.length; i++) {
+        if (queue[i].type === sseType) {
+          queue[i].data = sseData;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        queue.push({ type: sseType, data: sseData });
+      }
+
+      debug(config, "hot-policy queued message:", sseType, "queue size:", queue.length);
     });
   }
 

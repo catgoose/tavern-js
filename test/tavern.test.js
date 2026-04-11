@@ -1391,6 +1391,218 @@ describe("delegated commands", () => {
   });
 });
 
+describe("hot-region interaction protection", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+  });
+
+  /**
+   * Dispatches a cancelable htmx:sseBeforeMessage event on the element.
+   *
+   * @param {HTMLElement} el - Target element
+   * @param {string} type - SSE event type
+   * @param {string} data - SSE message data
+   * @returns {CustomEvent} The dispatched event
+   */
+  function fireSSEBeforeMessage(el, type, data) {
+    const evt = new CustomEvent("htmx:sseBeforeMessage", {
+      cancelable: true,
+      bubbles: true,
+      detail: { type: type, data: data },
+    });
+    el.dispatchEvent(evt);
+    return evt;
+  }
+
+  it("pause-on-pointerdown suppresses htmx:sseBeforeMessage while pointer is down", () => {
+    const el = createSSEElement({ "tavern-hot-policy": "pause-on-pointerdown" });
+    window.Tavern.bind(el);
+
+    // Before pointerdown — message should NOT be suppressed
+    const evt1 = fireSSEBeforeMessage(el, "tasks", "<li>task1</li>");
+    expect(evt1.defaultPrevented).toBe(false);
+
+    // Pointerdown — message should be suppressed
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    const evt2 = fireSSEBeforeMessage(el, "tasks", "<li>task2</li>");
+    expect(evt2.defaultPrevented).toBe(true);
+
+    // Pointerup — message should NOT be suppressed
+    el.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    const evt3 = fireSSEBeforeMessage(el, "tasks", "<li>task3</li>");
+    expect(evt3.defaultPrevented).toBe(false);
+  });
+
+  it("pause-on-pointerdown handles pointercancel", () => {
+    const el = createSSEElement({ "tavern-hot-policy": "pause-on-pointerdown" });
+    window.Tavern.bind(el);
+
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    const evt1 = fireSSEBeforeMessage(el, "tasks", "<li>task</li>");
+    expect(evt1.defaultPrevented).toBe(true);
+
+    el.dispatchEvent(new Event("pointercancel", { bubbles: true }));
+    const evt2 = fireSSEBeforeMessage(el, "tasks", "<li>task</li>");
+    expect(evt2.defaultPrevented).toBe(false);
+  });
+
+  it("defer-on-focus suppresses htmx:sseBeforeMessage while focus is inside", () => {
+    const el = createSSEElement({ "tavern-hot-policy": "defer-on-focus" });
+    const input = document.createElement("input");
+    el.appendChild(input);
+    window.Tavern.bind(el);
+
+    // Before focusin — not suppressed
+    const evt1 = fireSSEBeforeMessage(el, "tasks", "<li>task1</li>");
+    expect(evt1.defaultPrevented).toBe(false);
+
+    // Focusin — suppressed
+    el.dispatchEvent(new FocusEvent("focusin", { bubbles: true, relatedTarget: null }));
+    const evt2 = fireSSEBeforeMessage(el, "tasks", "<li>task2</li>");
+    expect(evt2.defaultPrevented).toBe(true);
+
+    // Focusout leaving the region — not suppressed
+    el.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: document.body }));
+    const evt3 = fireSSEBeforeMessage(el, "tasks", "<li>task3</li>");
+    expect(evt3.defaultPrevented).toBe(false);
+  });
+
+  it("defer-on-focus stays active when focus moves within the region", () => {
+    const el = createSSEElement({ "tavern-hot-policy": "defer-on-focus" });
+    const input1 = document.createElement("input");
+    const input2 = document.createElement("input");
+    el.appendChild(input1);
+    el.appendChild(input2);
+    window.Tavern.bind(el);
+
+    el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    // Focus moves from input1 to input2 — relatedTarget is inside el
+    el.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: input2 }));
+
+    const evt = fireSSEBeforeMessage(el, "tasks", "<li>task</li>");
+    expect(evt.defaultPrevented).toBe(true);
+  });
+
+  it("combined policies — both active simultaneously", () => {
+    const el = createSSEElement({ "tavern-hot-policy": "pause-on-pointerdown defer-on-focus" });
+    const input = document.createElement("input");
+    el.appendChild(input);
+    window.Tavern.bind(el);
+
+    // Activate both
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+
+    const evt1 = fireSSEBeforeMessage(el, "tasks", "<li>task</li>");
+    expect(evt1.defaultPrevented).toBe(true);
+
+    // Release pointer — focus still active, should still suppress
+    el.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    const evt2 = fireSSEBeforeMessage(el, "tasks", "<li>task</li>");
+    expect(evt2.defaultPrevented).toBe(true);
+
+    // Release focus — now should not suppress
+    el.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: document.body }));
+    const evt3 = fireSSEBeforeMessage(el, "tasks", "<li>task</li>");
+    expect(evt3.defaultPrevented).toBe(false);
+  });
+
+  it("dispatches tavern:policy-activated when suppression starts", () => {
+    const el = createSSEElement({ "tavern-hot-policy": "pause-on-pointerdown" });
+    window.Tavern.bind(el);
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:policy-activated", spy);
+
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0].detail.policy).toBe("pause-on-pointerdown");
+  });
+
+  it("dispatches tavern:policy-deactivated with flushed count when suppression ends", () => {
+    const el = createSSEElement({ "tavern-hot-policy": "pause-on-pointerdown" });
+    window.Tavern.bind(el);
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:policy-deactivated", spy);
+
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    fireSSEBeforeMessage(el, "tasks", "<li>task1</li>");
+    fireSSEBeforeMessage(el, "status", "OK");
+    el.dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0].detail.policy).toBe("pause-on-pointerdown");
+    expect(spy.mock.calls[0][0].detail.flushed).toBe(2);
+  });
+
+  it("queues messages while paused and deduplicates by event type", () => {
+    const el = createSSEElement({ "tavern-hot-policy": "pause-on-pointerdown" });
+    window.Tavern.bind(el);
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:policy-deactivated", spy);
+
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+
+    // Send multiple messages of the same type — only last should be kept
+    fireSSEBeforeMessage(el, "tasks", "<li>task1</li>");
+    fireSSEBeforeMessage(el, "tasks", "<li>task2</li>");
+    fireSSEBeforeMessage(el, "tasks", "<li>task3</li>");
+
+    el.dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+    // Only 1 unique type was queued
+    expect(spy.mock.calls[0][0].detail.flushed).toBe(1);
+  });
+
+  it("element without tavern-hot-policy is not affected", () => {
+    const el = createSSEElement();
+    window.Tavern.bind(el);
+
+    // Message should pass through without being prevented
+    const evt = fireSSEBeforeMessage(el, "tasks", "<li>task</li>");
+    expect(evt.defaultPrevented).toBe(false);
+  });
+
+  it("unknown policy keywords are ignored with console.warn", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const el = createSSEElement({ "tavern-hot-policy": "pause-on-pointerdown unknown-policy" });
+    window.Tavern.bind(el);
+
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("unknown hot-policy keyword");
+
+    // Valid policy should still work
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    const evt = fireSSEBeforeMessage(el, "tasks", "<li>task</li>");
+    expect(evt.defaultPrevented).toBe(true);
+
+    warnSpy.mockRestore();
+  });
+
+  it("queue is cleared after deactivation", () => {
+    const el = createSSEElement({ "tavern-hot-policy": "pause-on-pointerdown" });
+    window.Tavern.bind(el);
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:policy-deactivated", spy);
+
+    // First cycle
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    fireSSEBeforeMessage(el, "tasks", "<li>task1</li>");
+    el.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    expect(spy.mock.calls[0][0].detail.flushed).toBe(1);
+
+    // Second cycle — queue should be fresh
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    el.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    expect(spy.mock.calls[1][0].detail.flushed).toBe(0);
+  });
+});
+
 describe("non-browser environment", () => {
   it("does not crash when document is undefined", async () => {
     const { execSync } = await import("node:child_process");
