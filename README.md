@@ -78,6 +78,7 @@ and listens for four control events that the tavern broker already emits:
 | `tavern-replay-gap` | Replay log can't cover the gap (JSON: `lastEventId`) | Reload, show banner, or fire custom event |
 | `tavern-replay-truncated` | Replay was truncated due to limits (JSON: `delivered`, `dropped`) | Dispatch `tavern:replay-truncated` with truncation stats |
 | `tavern-topics-changed` | Subscription set changed at runtime | Dispatch DOM event with topic details |
+| `tavern-backpressure` | Backpressure tier changed (JSON: `tier`, `previousTier`, `topic`) | Dispatch `tavern:stream-degraded` or `tavern:stream-restored` |
 
 Connection drops are detected via HTMX lifecycle events (`htmx:sseError` /
 `htmx:sseOpen`) so the UI reacts immediately — before the server even knows.
@@ -172,6 +173,8 @@ tavern.js dispatches bubbling custom events for programmatic handling:
 | `tavern:stale` | `{ reason }` | Region entered stale state (e.g. replay gap without reload) |
 | `tavern:live` | — | Region is fully live again |
 | `tavern:recovering` | — | Transport open, recovery in progress |
+| `tavern:stream-degraded` | `{ tier, previousTier, topic, scope }` | Backpressure tier escalated (throttle, simplify, disconnect) |
+| `tavern:stream-restored` | `{ previousTier, topic, scope }` | Backpressure tier returned to normal |
 
 ```javascript
 document.addEventListener("tavern:disconnected", (e) => {
@@ -205,6 +208,29 @@ document.addEventListener("tavern:reconnected", (e) => {
 
 document.addEventListener("tavern:replay-truncated", (e) => {
   console.warn(`Replay truncated: ${e.detail.delivered} delivered, ${e.detail.dropped} dropped`);
+});
+```
+
+### Degradation Signals
+
+> _"Works fine." "Works fine," they say. Your Titanic also "works fine" right up until the moment it doesn't._
+>
+> — The Wisdom of the Uniform Interface
+
+Degradation is the moment your live UI stops being trustworthy. The
+`tavern:stream-degraded` and `tavern:stream-restored` events make that visible
+before it's too late.
+
+These are pressure/degradation signals, distinct from replay gap and reconnect
+recovery. Tavern-JS dispatches events; apps own the presentation policy.
+
+```javascript
+region.addEventListener("tavern:stream-degraded", (e) => {
+  showToast(`Stream degraded: ${e.detail.tier} (was ${e.detail.previousTier})`);
+});
+
+region.addEventListener("tavern:stream-restored", (e) => {
+  showToast("Stream restored to normal");
 });
 ```
 

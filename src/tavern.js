@@ -9,6 +9,7 @@
  * - tavern-replay-gap     — fires when the replay log cannot satisfy Last-Event-ID (JSON: lastEventId)
  * - tavern-replay-truncated — fires when replay was truncated due to limits (JSON: delivered, dropped)
  * - tavern-topics-changed — fires when subscription topics change at runtime
+ * - tavern-backpressure   — fires on backpressure tier changes (JSON: tier, previousTier, topic)
  *
  * @module tavern
  * @version 0.0.17
@@ -30,6 +31,9 @@
 
   /** @type {string} SSE event name for topic subscription changes */
   const EVT_TOPICS_CHANGED = "tavern-topics-changed";
+
+  /** @type {string} SSE event name for backpressure tier changes */
+  const EVT_BACKPRESSURE = "tavern-backpressure";
 
   /** @type {MutationObserver|null} Active observer instance, if initialized */
   var _observer = null;
@@ -468,6 +472,10 @@
         EVT_TOPICS_CHANGED,
         el._tavernOnTopicsChanged,
       );
+      el._tavernControlSource.removeEventListener(
+        EVT_BACKPRESSURE,
+        el._tavernOnBackpressure,
+      );
     }
 
     // Create stable references so they can be removed later.
@@ -486,11 +494,39 @@
     el._tavernOnTopicsChanged = function (e) {
       handleTopicsChanged(el, config, e.data || "");
     };
+    el._tavernOnBackpressure = function (e) {
+      var data = safeParseJSON(e.data);
+      var detail = {
+        tier: data.tier || "unknown",
+        previousTier: data.previousTier || "unknown",
+        topic: data.topic || null,
+        scope: config.scope || null,
+      };
+
+      debug(config, "backpressure tier change", detail);
+
+      if (data.tier === "normal") {
+        el.dispatchEvent(
+          new CustomEvent("tavern:stream-restored", {
+            bubbles: true,
+            detail: detail,
+          }),
+        );
+      } else {
+        el.dispatchEvent(
+          new CustomEvent("tavern:stream-degraded", {
+            bubbles: true,
+            detail: detail,
+          }),
+        );
+      }
+    };
 
     source.addEventListener(EVT_RECONNECTED, el._tavernOnReconnected);
     source.addEventListener(EVT_REPLAY_GAP, el._tavernOnReplayGap);
     source.addEventListener(EVT_REPLAY_TRUNCATED, el._tavernOnReplayTruncated);
     source.addEventListener(EVT_TOPICS_CHANGED, el._tavernOnTopicsChanged);
+    source.addEventListener(EVT_BACKPRESSURE, el._tavernOnBackpressure);
 
     el._tavernControlSource = source;
 
