@@ -261,12 +261,13 @@ For common cases where every interactive element in a hot region follows the
 same pattern (click a button, POST to its URL, send its data attributes),
 tavern.js offers a fully declarative alternative — no JavaScript required.
 
-Add two attributes to the stable `sse-connect` parent:
+Add attributes to the stable `sse-connect` parent:
 
 | Attribute | Description |
 |---|---|
-| `tavern-command-delegate` | Event type to listen for (e.g. `"click"`) |
+| `tavern-command-delegate` | Event type to listen for (e.g. `"click"`, `"pointerdown"`) |
 | `tavern-command-target` | CSS selector passed to `closest()` on the event target |
+| `tavern-command-dedup` | Dedup window in milliseconds — suppresses duplicate commands to the same URL within the window |
 
 Each matching child carries its own `command-url` (the POST endpoint) and any
 number of `command-*` data attributes that become the JSON body:
@@ -288,8 +289,82 @@ When the user clicks a button:
 
 1. `closest("[command-url]")` finds the nearest matching element
 2. `command-url` is read as the POST endpoint
-3. All other `command-*` attributes become the JSON body (`command-id="42"` becomes `{ "id": "42" }`)
-4. `Tavern.command(url, body)` is called automatically
+3. `{name}` tokens in the URL are expanded (see [URL Token Expansion](#url-token-expansion))
+4. All other `command-*` attributes become the JSON body (`command-id="42"` becomes `{ "id": "42" }`)
+5. `Tavern.command(url, body)` is called automatically
+
+### `pointerdown` for Hot Regions
+
+In aggressively SSE-swapped regions, `click` can fire too late — the target
+element may be replaced between `pointerdown` and `click`. Use
+`tavern-command-delegate="pointerdown"` to capture intent immediately:
+
+```html
+<div sse-connect="/sse/tasks"
+     sse-swap="tasks"
+     tavern-command-delegate="pointerdown"
+     tavern-command-target="[command-url]"
+     tavern-command-dedup="500">
+  <button command-url="/tasks/{id}/complete" command-id="42">Done</button>
+</div>
+```
+
+When `delegate` is `"pointerdown"`, tavern also listens for `click` on the
+same container. Combined with `tavern-command-dedup`, the follow-up `click`
+is automatically suppressed — no double-fire.
+
+### Dedup Window
+
+Set `tavern-command-dedup="500"` (milliseconds) on the parent to suppress
+duplicate commands to the same URL within the window. This is useful when
+`pointerdown` and `click` both fire on the same target, or when rapid taps
+could send multiple POSTs.
+
+When dedup is active, after a command fires the URL and timestamp are recorded
+on the matched element. Any subsequent command to the same URL within the
+window is silently suppressed.
+
+### URL Token Expansion
+
+`command-url` supports `{name}` tokens that are expanded from attributes on
+the matched element. This avoids repeating the base URL path on every button:
+
+```html
+<button command-url="/tasks/{id}/complete" command-id="42">Done</button>
+<!-- Resolves to POST /tasks/42/complete -->
+```
+
+**Token resolution order:**
+1. `command-name` attribute (e.g. `command-id` for `{id}`)
+2. `data-name` attribute (e.g. `data-id`)
+3. Raw `name` attribute (e.g. `id`)
+
+Unresolved tokens are left as-is in the URL.
+
+### Hot-Region Example
+
+Combining `pointerdown`, dedup, and URL expansion for a high-frequency
+SSE region:
+
+```html
+<div sse-connect="/sse/tasks"
+     sse-swap="tasks"
+     tavern-command-delegate="pointerdown"
+     tavern-command-target="[command-url]"
+     tavern-command-dedup="500"
+     tavern-hot-policy="pause-on-pointerdown">
+
+  <!-- Buttons are ephemeral — replaced on every SSE swap -->
+  <button command-url="/tasks/{id}/complete" command-id="42">Done</button>
+  <button command-url="/tasks/{id}/archive"  command-id="42">Archive</button>
+  <button command-url="/tasks/{id}/delete"   command-id="42">Remove</button>
+</div>
+```
+
+- `pointerdown` captures intent before the DOM can churn
+- `dedup="500"` prevents the follow-up `click` from double-firing
+- `{id}` tokens expand from `command-id` on each button
+- `pause-on-pointerdown` holds SSE swaps while the pointer is down
 
 ### Delegated Command Events
 

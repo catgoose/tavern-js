@@ -57,6 +57,7 @@
    * @property {boolean} [debug] - Enable debug logging
    * @property {string} [staleClass] - CSS class(es) applied when region becomes stale
    * @property {string} [liveClass] - CSS class(es) applied when region is live
+   * @property {string} [commandDedup] - Dedup window in milliseconds for delegated commands
    */
 
   /**
@@ -75,6 +76,7 @@
       scope: el.getAttribute("tavern-scope"),
       commandDelegate: el.getAttribute("tavern-command-delegate"),
       commandTarget: el.getAttribute("tavern-command-target"),
+      commandDedup: el.getAttribute("tavern-command-dedup"),
       hotPolicy: el.getAttribute("tavern-hot-policy"),
       staleClass: el.getAttribute("tavern-stale-class"),
       liveClass: el.getAttribute("tavern-live-class"),
@@ -858,6 +860,31 @@
   }
 
   /**
+   * Expands `{name}` tokens in a URL string using attributes from the element.
+   * Token resolution order: `command-name` attribute, then `data-name`, then
+   * raw `name` attribute. Unresolved tokens are left as-is.
+   *
+   * @param {HTMLElement} el - The element to source attribute values from
+   * @param {string} url - The URL string containing `{name}` tokens
+   * @param {TavernConfig} [config] - Optional config for debug warnings
+   * @returns {string} The URL with tokens expanded
+   */
+  function expandCommandUrl(el, url, config) {
+    return url.replace(/\{([^}]+)\}/g, function (match, name) {
+      var val = el.getAttribute("command-" + name);
+      if (val !== null) return val;
+      val = el.getAttribute("data-" + name);
+      if (val !== null) return val;
+      val = el.getAttribute(name);
+      if (val !== null) return val;
+      if (config) {
+        debug(config, "unresolved URL token:", match);
+      }
+      return match;
+    });
+  }
+
+  /**
    * Binds a delegated event listener on a parent element for declarative
    * command dispatching. Reads `tavern-command-delegate` (event type) and
    * `tavern-command-target` (CSS selector for closest()) from the element.
@@ -865,6 +892,9 @@
    * When the delegated event fires, the listener finds the nearest matching
    * ancestor of the event target, reads its `command-url` and `command-*`
    * attributes, and calls `command()`.
+   *
+   * When `tavern-command-dedup` is set (milliseconds), duplicate commands to
+   * the same URL within the dedup window are suppressed.
    *
    * @param {HTMLElement} el - The SSE-connected parent element
    * @param {TavernConfig} config - Current configuration
@@ -874,17 +904,56 @@
 
     var eventType = config.commandDelegate;
     var selector = config.commandTarget;
+    var dedupMs = config.commandDedup ? parseInt(config.commandDedup, 10) : 0;
 
     debug(config, "binding delegated commands", eventType, selector);
 
-    el.addEventListener(eventType, function (e) {
+    /**
+     * Checks the dedup window and suppresses if a matching command was
+     * recently dispatched. Returns true if the command should be suppressed.
+     *
+     * @param {HTMLElement} target - The matched command element
+     * @param {string} url - The resolved command URL
+     * @returns {boolean} True if the command should be suppressed
+     */
+    function shouldDedup(target, url) {
+      if (!dedupMs) return false;
+      var last = target._tavernLastCommand;
+      if (last && last.url === url && (Date.now() - last.timestamp) < dedupMs) {
+        debug(config, "dedup suppressed command to", url);
+        return true;
+      }
+      return false;
+    }
+
+    /**
+     * Records a command dispatch for dedup tracking.
+     *
+     * @param {HTMLElement} target - The matched command element
+     * @param {string} url - The resolved command URL
+     */
+    function recordCommand(target, url) {
+      if (!dedupMs) return;
+      target._tavernLastCommand = { url: url, timestamp: Date.now() };
+    }
+
+    /**
+     * Core handler for delegated command events.
+     *
+     * @param {Event} e - The DOM event
+     */
+    function handleCommand(e) {
       var target = e.target.closest(selector);
       if (!target || !el.contains(target)) return;
 
-      var url = target.getAttribute("command-url");
-      if (!url) return;
+      var rawUrl = target.getAttribute("command-url");
+      if (!rawUrl) return;
 
+      var url = expandCommandUrl(target, rawUrl, config);
       var body = collectCommandAttrs(target);
+
+      if (shouldDedup(target, url)) return;
+      recordCommand(target, url);
 
       target.dispatchEvent(
         new CustomEvent("tavern:command-sent", {
@@ -911,7 +980,16 @@
           );
         },
       );
-    });
+    }
+
+    el.addEventListener(eventType, handleCommand);
+
+    // When delegate is pointerdown, also listen for click to handle dedup.
+    // A pointerdown followed by click on the same target would otherwise
+    // double-fire the command.
+    if (eventType === "pointerdown") {
+      el.addEventListener("click", handleCommand);
+    }
   }
 
   /**

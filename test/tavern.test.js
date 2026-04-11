@@ -2014,6 +2014,252 @@ describe("stale/live UX primitives", () => {
   });
 });
 
+describe("delegated commands — pointerdown, dedup, URL expansion", () => {
+  beforeEach(async () => {
+    document.body.innerHTML = "";
+    await loadTavern();
+    globalThis.fetch = vi.fn();
+  });
+
+  /**
+   * Creates a child element with command-url and optional command-* attributes.
+   *
+   * @param {HTMLElement} parent - Parent element to append to
+   * @param {Object} [attrs] - Attributes to set on the child
+   * @returns {HTMLElement}
+   */
+  function createCommandChild(parent, attrs = {}) {
+    const child = document.createElement("button");
+    for (const [key, value] of Object.entries(attrs)) {
+      child.setAttribute(key, value);
+    }
+    parent.appendChild(child);
+    return child;
+  }
+
+  it("tavern-command-delegate='pointerdown' fires on pointerdown event", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "pointerdown",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/tasks/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "42" }),
+    });
+  });
+
+  it("dedup window suppresses duplicate command to same URL within window", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "pointerdown",
+      "tavern-command-target": "[command-url]",
+      "tavern-command-dedup": "500",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    // First pointerdown fires
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    // Subsequent click within dedup window is suppressed
+    child.click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("dedup window allows command after window expires", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+      "tavern-command-dedup": "50",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    child.click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    // Wait for dedup window to expire
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    child.click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("URL token expansion from command-* attributes", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/{id}/complete",
+      "command-id": "42",
+    });
+
+    child.click();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/tasks/42/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "42" }),
+    });
+  });
+
+  it("URL token expansion from data-* attributes", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/{task-id}/complete",
+    });
+    child.setAttribute("data-task-id", "99");
+
+    child.click();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/tasks/99/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+  });
+
+  it("URL token expansion with unresolved tokens leaves them as-is", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/{missing}/complete",
+      "command-id": "42",
+    });
+
+    child.click();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/tasks/{missing}/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "42" }),
+    });
+  });
+
+  it("combined: pointerdown + dedup + URL expansion", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "pointerdown",
+      "tavern-command-target": "[command-url]",
+      "tavern-command-dedup": "500",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/{id}/complete",
+      "command-id": "42",
+    });
+
+    // pointerdown fires with expanded URL
+    child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith("/tasks/42/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "42" }),
+    });
+
+    // click within dedup window is suppressed
+    child.click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("dedup allows different URLs within the window", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+      "tavern-command-dedup": "500",
+    });
+    window.Tavern.bind(el);
+
+    const child1 = createCommandChild(el, {
+      "command-url": "/tasks/complete",
+      "command-id": "42",
+    });
+
+    const child2 = createCommandChild(el, {
+      "command-url": "/tasks/delete",
+      "command-id": "42",
+    });
+
+    child1.click();
+    child2.click();
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("URL token expansion prefers command-* over data-* over raw attributes", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    window.Tavern.bind(el);
+
+    const child = createCommandChild(el, {
+      "command-url": "/tasks/{id}/complete",
+      "command-id": "from-command",
+    });
+    child.setAttribute("data-id", "from-data");
+    child.setAttribute("id", "from-raw");
+
+    child.click();
+
+    // command-id wins over data-id and raw id
+    expect(globalThis.fetch).toHaveBeenCalledWith("/tasks/from-command/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "from-command" }),
+    });
+  });
+});
+
 describe("non-browser environment", () => {
   it("does not crash when document is undefined", async () => {
     const { execSync } = await import("node:child_process");
