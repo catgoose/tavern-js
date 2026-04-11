@@ -5,8 +5,9 @@
  * them into declarative, attribute-driven UI behaviors.
  *
  * Control events handled:
- * - tavern-reconnected  — fires when the server confirms a reconnection
- * - tavern-replay-gap   — fires when the replay log cannot satisfy Last-Event-ID
+ * - tavern-reconnected    — fires after replay completes on reconnection (JSON: replayDelivered, replayDropped)
+ * - tavern-replay-gap     — fires when the replay log cannot satisfy Last-Event-ID (JSON: lastEventId)
+ * - tavern-replay-truncated — fires when replay was truncated due to limits (JSON: delivered, dropped)
  * - tavern-topics-changed — fires when subscription topics change at runtime
  *
  * @module tavern
@@ -23,6 +24,9 @@
 
   /** @type {string} SSE event name for replay gap detection */
   const EVT_REPLAY_GAP = "tavern-replay-gap";
+
+  /** @type {string} SSE event name for replay truncation */
+  const EVT_REPLAY_TRUNCATED = "tavern-replay-truncated";
 
   /** @type {string} SSE event name for topic subscription changes */
   const EVT_TOPICS_CHANGED = "tavern-topics-changed";
@@ -268,8 +272,9 @@
    *
    * @param {HTMLElement} el - The SSE-connected element
    * @param {TavernConfig} config - Current configuration
+   * @param {Object} [detail] - Structured detail from the server (replayDelivered, replayDropped)
    */
-  function markReconnected(el, config) {
+  function markReconnected(el, config, detail) {
     if (!el._tavernDisconnected) return;
     el._tavernDisconnected = false;
 
@@ -286,7 +291,10 @@
     setRegionState(el, config, "live");
 
     el.dispatchEvent(
-      new CustomEvent("tavern:reconnected", { bubbles: true }),
+      new CustomEvent("tavern:reconnected", {
+        bubbles: true,
+        detail: detail || {},
+      }),
     );
   }
 
@@ -296,10 +304,10 @@
    *
    * @param {HTMLElement} el - The SSE-connected element
    * @param {TavernConfig} config - Current configuration
-   * @param {string} lastEventId - The Last-Event-ID that could not be replayed
+   * @param {Object} detail - Parsed JSON detail from the server (e.g. { lastEventId })
    */
-  function handleReplayGap(el, config, lastEventId) {
-    debug(config, "replay gap detected, lastEventId:", lastEventId);
+  function handleReplayGap(el, config, detail) {
+    debug(config, "replay gap detected, detail:", detail);
 
     var action = config.gapAction;
     if (!action) {
@@ -307,7 +315,7 @@
       el.dispatchEvent(
         new CustomEvent("tavern:replay-gap", {
           bubbles: true,
-          detail: { lastEventId: lastEventId },
+          detail: detail,
         }),
       );
       return;
@@ -329,7 +337,7 @@
     el.dispatchEvent(
       new CustomEvent(action, {
         bubbles: true,
-        detail: { lastEventId: lastEventId },
+        detail: detail,
       }),
     );
   }
@@ -364,6 +372,40 @@
     wrapper.appendChild(msg);
     wrapper.appendChild(btn);
     el.prepend(wrapper);
+  }
+
+  /**
+   * Safely parses a JSON string, returning a fallback object on failure.
+   *
+   * @param {string} data - JSON string to parse
+   * @returns {Object} Parsed object or empty object on failure
+   */
+  function safeParseJSON(data) {
+    if (!data) return {};
+    try {
+      return JSON.parse(data);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /**
+   * Handles a replay-truncated event by dispatching a DOM event with
+   * the parsed truncation stats.
+   *
+   * @param {HTMLElement} el - The SSE-connected element
+   * @param {TavernConfig} config - Current configuration
+   * @param {Object} detail - Parsed JSON detail from the server (e.g. { delivered, dropped })
+   */
+  function handleReplayTruncated(el, config, detail) {
+    debug(config, "replay truncated", detail);
+
+    el.dispatchEvent(
+      new CustomEvent("tavern:replay-truncated", {
+        bubbles: true,
+        detail: detail,
+      }),
+    );
   }
 
   /**
@@ -417,17 +459,27 @@
         el._tavernOnReplayGap,
       );
       el._tavernControlSource.removeEventListener(
+        EVT_REPLAY_TRUNCATED,
+        el._tavernOnReplayTruncated,
+      );
+      el._tavernControlSource.removeEventListener(
         EVT_TOPICS_CHANGED,
         el._tavernOnTopicsChanged,
       );
     }
 
     // Create stable references so they can be removed later.
-    el._tavernOnReconnected = function () {
-      markReconnected(el, config);
+    el._tavernOnReconnected = function (e) {
+      var detail = safeParseJSON(e.data);
+      markReconnected(el, config, detail);
     };
     el._tavernOnReplayGap = function (e) {
-      handleReplayGap(el, config, e.data || "");
+      var detail = safeParseJSON(e.data);
+      handleReplayGap(el, config, detail);
+    };
+    el._tavernOnReplayTruncated = function (e) {
+      var detail = safeParseJSON(e.data);
+      handleReplayTruncated(el, config, detail);
     };
     el._tavernOnTopicsChanged = function (e) {
       handleTopicsChanged(el, config, e.data || "");
@@ -435,6 +487,7 @@
 
     source.addEventListener(EVT_RECONNECTED, el._tavernOnReconnected);
     source.addEventListener(EVT_REPLAY_GAP, el._tavernOnReplayGap);
+    source.addEventListener(EVT_REPLAY_TRUNCATED, el._tavernOnReplayTruncated);
     source.addEventListener(EVT_TOPICS_CHANGED, el._tavernOnTopicsChanged);
 
     el._tavernControlSource = source;

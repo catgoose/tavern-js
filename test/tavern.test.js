@@ -193,9 +193,9 @@ describe("tavern.js", () => {
       el.dispatchEvent(new Event("htmx:sseError"));
       expect(el.classList.contains("opacity-50")).toBe(true);
 
-      // Reconnect — new EventSource fires tavern-reconnected
+      // Reconnect — new EventSource fires tavern-reconnected with JSON payload
       const source2 = simulateSSEOpen(el);
-      fireSSEEvent(source2, "tavern-reconnected");
+      fireSSEEvent(source2, "tavern-reconnected", JSON.stringify({ replayDelivered: 3, replayDropped: 0 }));
       expect(el.classList.contains("opacity-50")).toBe(false);
     });
 
@@ -215,7 +215,7 @@ describe("tavern.js", () => {
       expect(status.hasAttribute("hidden")).toBe(true);
     });
 
-    it("dispatches tavern:reconnected custom event", () => {
+    it("dispatches tavern:reconnected custom event with parsed JSON detail", () => {
       const el = createSSEElement();
       window.Tavern.bind(el);
 
@@ -228,8 +228,10 @@ describe("tavern.js", () => {
       el.dispatchEvent(new Event("htmx:sseError"));
 
       const source2 = simulateSSEOpen(el);
-      fireSSEEvent(source2, "tavern-reconnected");
+      fireSSEEvent(source2, "tavern-reconnected", JSON.stringify({ replayDelivered: 5, replayDropped: 2 }));
       expect(spy).toHaveBeenCalledOnce();
+      expect(spy.mock.calls[0][0].detail.replayDelivered).toBe(5);
+      expect(spy.mock.calls[0][0].detail.replayDropped).toBe(2);
     });
 
     it("does not clear disconnected state on htmx:sseOpen alone", () => {
@@ -366,7 +368,7 @@ describe("tavern.js", () => {
   });
 
   describe("replay gap", () => {
-    it("dispatches tavern:replay-gap event by default", () => {
+    it("dispatches tavern:replay-gap event with parsed JSON detail", () => {
       const el = createSSEElement();
       window.Tavern.bind(el);
 
@@ -374,7 +376,7 @@ describe("tavern.js", () => {
       el.addEventListener("tavern:replay-gap", spy);
 
       const source = simulateSSEOpen(el);
-      fireSSEEvent(source, "tavern-replay-gap", "evt-42");
+      fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "evt-42" }));
       expect(spy).toHaveBeenCalledOnce();
       expect(spy.mock.calls[0][0].detail.lastEventId).toBe("evt-42");
     });
@@ -390,7 +392,7 @@ describe("tavern.js", () => {
       });
 
       const source = simulateSSEOpen(el);
-      fireSSEEvent(source, "tavern-replay-gap", "evt-42");
+      fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "evt-42" }));
       expect(reloadSpy).toHaveBeenCalledOnce();
     });
 
@@ -399,7 +401,7 @@ describe("tavern.js", () => {
       window.Tavern.bind(el);
 
       const source = simulateSSEOpen(el);
-      fireSSEEvent(source, "tavern-replay-gap", "evt-42");
+      fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "evt-42" }));
 
       const banner = el.querySelector("[tavern-gap-banner]");
       expect(banner).not.toBeNull();
@@ -423,7 +425,7 @@ describe("tavern.js", () => {
       window.Tavern.bind(el);
 
       const source = simulateSSEOpen(el);
-      fireSSEEvent(source, "tavern-replay-gap", "");
+      fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "" }));
 
       const alert = el.querySelector("[tavern-gap-banner] [role='alert']");
       expect(alert.textContent).toBe("Updates missed!");
@@ -434,7 +436,7 @@ describe("tavern.js", () => {
       window.Tavern.bind(el);
 
       const source = simulateSSEOpen(el);
-      fireSSEEvent(source, "tavern-replay-gap", "");
+      fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "" }));
 
       const banner = el.querySelector("[tavern-gap-banner]");
       // Wrapper is a div, not a button
@@ -454,8 +456,8 @@ describe("tavern.js", () => {
       window.Tavern.bind(el);
 
       const source = simulateSSEOpen(el);
-      fireSSEEvent(source, "tavern-replay-gap", "");
-      fireSSEEvent(source, "tavern-replay-gap", "");
+      fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "" }));
+      fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "" }));
 
       const banners = el.querySelectorAll("[tavern-gap-banner]");
       expect(banners.length).toBe(1);
@@ -471,8 +473,9 @@ describe("tavern.js", () => {
       el.addEventListener("my-custom-refresh", spy);
 
       const source = simulateSSEOpen(el);
-      fireSSEEvent(source, "tavern-replay-gap", "evt-42");
+      fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "evt-42" }));
       expect(spy).toHaveBeenCalledOnce();
+      expect(spy.mock.calls[0][0].detail.lastEventId).toBe("evt-42");
     });
   });
 
@@ -507,6 +510,106 @@ describe("tavern.js", () => {
 
       expect(spy).toHaveBeenCalledOnce();
       expect(spy.mock.calls[0][0].detail.raw).toBe("not json");
+    });
+  });
+
+  describe("replay truncated", () => {
+    it("dispatches tavern:replay-truncated with parsed JSON detail", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const spy = vi.fn();
+      el.addEventListener("tavern:replay-truncated", spy);
+
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-truncated", JSON.stringify({ delivered: 10, dropped: 3 }));
+      expect(spy).toHaveBeenCalledOnce();
+      expect(spy.mock.calls[0][0].detail.delivered).toBe(10);
+      expect(spy.mock.calls[0][0].detail.dropped).toBe(3);
+    });
+
+    it("handles empty data gracefully", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const spy = vi.fn();
+      el.addEventListener("tavern:replay-truncated", spy);
+
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-truncated", "");
+      expect(spy).toHaveBeenCalledOnce();
+      expect(spy.mock.calls[0][0].detail).toEqual({});
+    });
+
+    it("handles malformed JSON gracefully", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const spy = vi.fn();
+      el.addEventListener("tavern:replay-truncated", spy);
+
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-truncated", "not json");
+      expect(spy).toHaveBeenCalledOnce();
+      expect(spy.mock.calls[0][0].detail).toEqual({});
+    });
+  });
+
+  describe("control event JSON parsing resilience", () => {
+    it("tavern-reconnected with empty data dispatches empty detail", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const spy = vi.fn();
+      el.addEventListener("tavern:reconnected", spy);
+
+      const source = simulateSSEOpen(el);
+      el.dispatchEvent(new Event("htmx:sseError"));
+      const source2 = simulateSSEOpen(el);
+      fireSSEEvent(source2, "tavern-reconnected", "");
+      expect(spy).toHaveBeenCalledOnce();
+      expect(spy.mock.calls[0][0].detail).toEqual({});
+    });
+
+    it("tavern-reconnected with malformed data dispatches empty detail", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const spy = vi.fn();
+      el.addEventListener("tavern:reconnected", spy);
+
+      const source = simulateSSEOpen(el);
+      el.dispatchEvent(new Event("htmx:sseError"));
+      const source2 = simulateSSEOpen(el);
+      fireSSEEvent(source2, "tavern-reconnected", "not json");
+      expect(spy).toHaveBeenCalledOnce();
+      expect(spy.mock.calls[0][0].detail).toEqual({});
+    });
+
+    it("tavern-replay-gap with empty data dispatches empty detail", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const spy = vi.fn();
+      el.addEventListener("tavern:replay-gap", spy);
+
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-gap", "");
+      expect(spy).toHaveBeenCalledOnce();
+      expect(spy.mock.calls[0][0].detail).toEqual({});
+    });
+
+    it("tavern-replay-gap with malformed data dispatches empty detail", () => {
+      const el = createSSEElement();
+      window.Tavern.bind(el);
+
+      const spy = vi.fn();
+      el.addEventListener("tavern:replay-gap", spy);
+
+      const source = simulateSSEOpen(el);
+      fireSSEEvent(source, "tavern-replay-gap", "not json");
+      expect(spy).toHaveBeenCalledOnce();
+      expect(spy.mock.calls[0][0].detail).toEqual({});
     });
   });
 
@@ -1791,7 +1894,7 @@ describe("stale/live UX primitives", () => {
     const spy = vi.fn();
     el.addEventListener("tavern:stale", spy);
 
-    fireSSEEvent(source, "tavern-replay-gap", "evt-99");
+    fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "evt-99" }));
 
     expect(el._tavernRegionState).toBe("stale");
     expect(el.classList.contains("opacity-50")).toBe(true);
@@ -1810,7 +1913,7 @@ describe("stale/live UX primitives", () => {
     const source = simulateSSEOpen(el);
 
     // Go stale via replay-gap
-    fireSSEEvent(source, "tavern-replay-gap", "evt-99");
+    fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "evt-99" }));
     expect(el._tavernRegionState).toBe("stale");
 
     // Need to disconnect and reconnect to get tavern-reconnected
@@ -1862,7 +1965,7 @@ describe("stale/live UX primitives", () => {
     expect(el.classList.contains("border-green")).toBe(true);
 
     // Go stale
-    fireSSEEvent(source, "tavern-replay-gap", "evt-1");
+    fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "evt-1" }));
     expect(el.classList.contains("opacity-50")).toBe(true);
     expect(el.classList.contains("border-red")).toBe(true);
     expect(el.classList.contains("opacity-100")).toBe(false);
@@ -1886,7 +1989,7 @@ describe("stale/live UX primitives", () => {
     window.Tavern.bind(el);
     const source = simulateSSEOpen(el);
 
-    fireSSEEvent(source, "tavern-replay-gap", "evt-1");
+    fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "evt-1" }));
 
     expect(el._tavernRegionState).toBe("stale");
     expect(el.classList.contains("opacity-50")).toBe(true);
@@ -1904,7 +2007,7 @@ describe("stale/live UX primitives", () => {
     const spy = vi.fn();
     el.addEventListener("my-custom-event", spy);
 
-    fireSSEEvent(source, "tavern-replay-gap", "evt-1");
+    fireSSEEvent(source, "tavern-replay-gap", JSON.stringify({ lastEventId: "evt-1" }));
 
     expect(el._tavernRegionState).toBe("stale");
     expect(spy).toHaveBeenCalledOnce();

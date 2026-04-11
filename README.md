@@ -74,8 +74,9 @@ and listens for three control events that the tavern broker already emits:
 
 | Server Event | What Happened | tavern.js Response |
 |---|---|---|
-| `tavern-reconnected` | Client reconnected after a drop | Remove reconnecting class, hide status |
-| `tavern-replay-gap` | Replay log can't cover the gap | Reload, show banner, or fire custom event |
+| `tavern-reconnected` | Replay complete after reconnection (JSON: `replayDelivered`, `replayDropped`) | Remove reconnecting class, hide status, dispatch `tavern:reconnected` with replay stats |
+| `tavern-replay-gap` | Replay log can't cover the gap (JSON: `lastEventId`) | Reload, show banner, or fire custom event |
+| `tavern-replay-truncated` | Replay was truncated due to limits (JSON: `delivered`, `dropped`) | Dispatch `tavern:replay-truncated` with truncation stats |
 | `tavern-topics-changed` | Subscription set changed at runtime | Dispatch DOM event with topic details |
 
 Connection drops are detected via HTMX lifecycle events (`htmx:sseError` /
@@ -154,8 +155,9 @@ tavern.js dispatches bubbling custom events for programmatic handling:
 | Event | `detail` | When |
 |---|---|---|
 | `tavern:disconnected` | — | SSE connection dropped |
-| `tavern:reconnected` | — | Server confirmed reconnection |
+| `tavern:reconnected` | `{ replayDelivered, replayDropped }` | Server confirmed reconnection (emitted after replay completes) |
 | `tavern:replay-gap` | `{ lastEventId }` | Replay log can't satisfy request (only when no `tavern-gap-action`) |
+| `tavern:replay-truncated` | `{ delivered, dropped }` | Replay was truncated — some events were dropped due to limits |
 | `tavern:topics-changed` | parsed JSON payload | Topic subscriptions changed |
 | `tavern:stale` | `{ reason }` | Region entered stale state (e.g. replay gap without reload) |
 | `tavern:live` | — | Region is fully live again |
@@ -166,11 +168,26 @@ document.addEventListener("tavern:disconnected", (e) => {
   console.log("Lost connection on", e.target);
 });
 
+document.addEventListener("tavern:reconnected", (e) => {
+  console.log("Reconnected — delivered:", e.detail.replayDelivered,
+              "dropped:", e.detail.replayDropped);
+});
+
 document.addEventListener("tavern:replay-gap", (e) => {
   console.log("Missed messages since", e.detail.lastEventId);
   // Custom recovery logic here
 });
+
+document.addEventListener("tavern:replay-truncated", (e) => {
+  console.log("Replay truncated — delivered:", e.detail.delivered,
+              "dropped:", e.detail.dropped);
+});
 ```
+
+All control events from the tavern broker now use structured JSON payloads.
+tavern.js parses these automatically and exposes the data as `detail` on the
+corresponding DOM events. Malformed or empty payloads are handled gracefully
+(detail defaults to an empty object).
 
 ## Commands
 
