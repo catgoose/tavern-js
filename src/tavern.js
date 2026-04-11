@@ -597,6 +597,15 @@
 
     // HTMX SSE lifecycle events
     el.addEventListener("htmx:sseError", function () {
+      // Raw transport signal — fires only if a connection was previously
+      // established (state is not "connecting").  Symmetric companion to
+      // tavern:transport-open.
+      if (el._tavernRegionState !== "connecting") {
+        el.dispatchEvent(
+          new CustomEvent("tavern:transport-closed", { bubbles: true }),
+        );
+      }
+
       markDisconnected(el, config);
 
       // Scoped stream fallback logic — only act if this element still owns the scope

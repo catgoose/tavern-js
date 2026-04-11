@@ -175,6 +175,8 @@ tavern.js dispatches bubbling custom events for programmatic handling:
 | `tavern:recovering` | — | Transport open, recovery in progress |
 | `tavern:stream-degraded` | `{ tier, previousTier, topic, scope }` | Backpressure tier escalated (throttle, simplify, disconnect) |
 | `tavern:stream-restored` | `{ previousTier, topic, scope }` | Backpressure tier returned to normal |
+| `tavern:transport-open` | — | SSE transport reopened after a disconnect |
+| `tavern:transport-closed` | — | SSE transport dropped (raw transport fact, no UI implications) |
 
 ```javascript
 document.addEventListener("tavern:disconnected", (e) => {
@@ -238,6 +240,23 @@ All control events from the tavern broker now use structured JSON payloads.
 tavern.js parses these automatically and exposes the data as `detail` on the
 corresponding DOM events. Malformed or empty payloads are handled gracefully
 (detail defaults to an empty object).
+
+### Transport Signals
+
+`tavern:transport-open` and `tavern:transport-closed` are raw transport signals
+for diagnostics and shell-level indicators. They do not imply recovery state
+or trigger UI changes — use `tavern:disconnected` / `tavern:reconnected` for
+region-level state.
+
+```javascript
+// Shell-level connection indicator
+document.addEventListener("tavern:transport-closed", () => {
+  shellIndicator.classList.add("offline");
+});
+document.addEventListener("tavern:transport-open", () => {
+  shellIndicator.classList.remove("offline");
+});
+```
 
 ## Commands
 
