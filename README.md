@@ -385,22 +385,23 @@ element may be replaced between `pointerdown` and `click`. Use
 <div sse-connect="/sse/tasks"
      sse-swap="tasks"
      tavern-command-delegate="pointerdown"
-     tavern-command-target="[command-url]"
-     tavern-command-dedup="500">
+     tavern-command-target="[command-url]">
   <button command-url="/tasks/{id}/complete" command-id="42">Done</button>
 </div>
 ```
 
 When `delegate` is `"pointerdown"`, tavern also listens for `click` on the
-same container. Combined with `tavern-command-dedup`, the follow-up `click`
-is automatically suppressed — no double-fire.
+same container. The follow-up `click` from the same pointer interaction is
+automatically suppressed (same target, same URL, within 500ms) — no
+double-fire, no extra configuration needed.
 
 ### Dedup Window
 
 Set `tavern-command-dedup="500"` (milliseconds) on the parent to suppress
 duplicate commands to the same URL within the window. This is useful when
-`pointerdown` and `click` both fire on the same target, or when rapid taps
-could send multiple POSTs.
+rapid taps could send multiple POSTs. (Note: the `pointerdown` delegate
+already handles its own click suppression internally — `tavern-command-dedup`
+is not required for that case.)
 
 When dedup is active, after a command fires the URL and timestamp are recorded
 on the matched element. Any subsequent command to the same URL within the
@@ -443,8 +444,8 @@ SSE region:
 </div>
 ```
 
-- `pointerdown` captures intent before the DOM can churn
-- `dedup="500"` prevents the follow-up `click` from double-firing
+- `pointerdown` captures intent before the DOM can churn (follow-up `click` is auto-suppressed)
+- `dedup="500"` additionally guards against rapid repeated taps
 - `{id}` tokens expand from `command-id` on each button
 - `pause-on-pointerdown` holds SSE swaps while the pointer is down
 
