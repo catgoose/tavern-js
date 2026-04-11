@@ -70,11 +70,11 @@ curl -Lso public/js/tavern.min.js https://cdn.jsdelivr.net/gh/catgoose/tavern-js
 ## How It Works
 
 Tavern.js auto-discovers elements with `sse-connect` (HTMX SSE extension)
-and listens for three control events that the tavern broker already emits:
+and listens for four control events that the tavern broker already emits:
 
 | Server Event | What Happened | tavern.js Response |
 |---|---|---|
-| `tavern-reconnected` | Replay complete after reconnection (JSON: `replayDelivered`, `replayDropped`) | Remove reconnecting class, hide status, dispatch `tavern:reconnected` with replay stats |
+| `tavern-reconnected` | Replay-complete signal — fires AFTER replay finishes (JSON: `replayDelivered`, `replayDropped`) | Remove reconnecting class, hide status, dispatch `tavern:reconnected` with replay stats |
 | `tavern-replay-gap` | Replay log can't cover the gap (JSON: `lastEventId`) | Reload, show banner, or fire custom event |
 | `tavern-replay-truncated` | Replay was truncated due to limits (JSON: `delivered`, `dropped`) | Dispatch `tavern:replay-truncated` with truncation stats |
 | `tavern-topics-changed` | Subscription set changed at runtime | Dispatch DOM event with topic details |
@@ -184,6 +184,20 @@ document.addEventListener("tavern:replay-gap", (e) => {
 document.addEventListener("tavern:replay-truncated", (e) => {
   console.log("Replay truncated — delivered:", e.detail.delivered,
               "dropped:", e.detail.dropped);
+});
+```
+
+Use the structured detail for defensive recovery logic:
+
+```javascript
+document.addEventListener("tavern:reconnected", (e) => {
+  if (e.detail.replayDropped > 0) {
+    console.warn("Some messages were lost during reconnection");
+  }
+});
+
+document.addEventListener("tavern:replay-truncated", (e) => {
+  console.warn(`Replay truncated: ${e.detail.delivered} delivered, ${e.detail.dropped} dropped`);
 });
 ```
 
