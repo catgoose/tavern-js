@@ -91,6 +91,7 @@ Configure behavior declaratively on any `sse-connect` element:
 | `tavern-gap-action` | `"reload"` \| `"banner"` \| event name | What to do when a replay gap is detected. `"reload"` refreshes the page. `"banner"` prepends a clickable banner. Anything else dispatches a custom DOM event with that name. |
 | `tavern-gap-banner-text` | string | Custom text for the gap banner (default: "Connection interrupted. Click to refresh.") |
 | `tavern-debug` | flag | Enable `console.debug` logging for this element. |
+| `tavern-hot-policy` | space-separated keywords | Interaction protection policies: `pause-on-pointerdown`, `defer-on-focus`. See [Hot-Region Interaction Protection](#hot-region-interaction-protection). |
 
 ### Status Elements
 
@@ -327,6 +328,62 @@ Tavern.promote("chat");
 // Retire a scoped stream (removes it from the registry)
 Tavern.retire("chat");
 ```
+
+## Hot-Region Interaction Protection
+
+SSE-driven DOM regions update rapidly, which can disrupt user interactions
+like dragging, selecting, or typing. `tavern-hot-policy` pauses incoming
+SSE swaps while the user is interacting, preventing the DOM from shifting
+under their hands.
+
+```html
+<div sse-connect="/sse/tasks"
+     sse-swap="tasks"
+     tavern-hot-policy="pause-on-pointerdown defer-on-focus">
+</div>
+```
+
+### Policies
+
+| Keyword | Trigger | Effect |
+|---|---|---|
+| `pause-on-pointerdown` | `pointerdown` inside the region | Queues SSE swaps until `pointerup` / `pointercancel` |
+| `defer-on-focus` | `focusin` on a child element | Queues SSE swaps until focus leaves the region entirely |
+
+Multiple policies can be combined (space-separated). If any policy is
+active, swaps are suppressed. Swaps resume only when all policies
+deactivate.
+
+### How it works
+
+When a policy is active, tavern intercepts `htmx:sseBeforeMessage` events
+via `preventDefault()` and queues the message data. The queue deduplicates
+by SSE event type (only the last message per type is kept). When the
+interaction ends, the queue is discarded — the next natural SSE message
+will bring current state.
+
+### Events
+
+| Event | `detail` | When |
+|---|---|---|
+| `tavern:policy-activated` | `{ policy }` | A policy begins suppressing swaps |
+| `tavern:policy-deactivated` | `{ policy, flushed }` | A policy stops; `flushed` is the number of queued messages that were discarded |
+
+```javascript
+document.addEventListener("tavern:policy-activated", (e) => {
+  console.log("Pausing swaps:", e.detail.policy);
+});
+
+document.addEventListener("tavern:policy-deactivated", (e) => {
+  console.log("Resumed swaps:", e.detail.policy, "discarded:", e.detail.flushed);
+});
+```
+
+### Data attributes
+
+| Attribute | Type | Description |
+|---|---|---|
+| `tavern-hot-policy` | space-separated keywords | Policies to apply. Unknown keywords are ignored with a console warning. |
 
 ## Examples
 
