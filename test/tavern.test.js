@@ -1434,6 +1434,28 @@ describe("hot-region interaction protection", () => {
     expect(evt3.defaultPrevented).toBe(false);
   });
 
+  it("pause-on-pointerdown deactivates when pointer is released outside the region", () => {
+    const el = createSSEElement({ "tavern-hot-policy": "pause-on-pointerdown" });
+    window.Tavern.bind(el);
+
+    const spy = vi.fn();
+    el.addEventListener("tavern:policy-deactivated", spy);
+
+    // Pointer down inside the region
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    const evt1 = fireSSEBeforeMessage(el, "tasks", "<li>task</li>");
+    expect(evt1.defaultPrevented).toBe(true);
+
+    // Pointer released outside the region (on document.body)
+    document.body.dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+    // Policy should have deactivated — swaps resume
+    const evt2 = fireSSEBeforeMessage(el, "tasks", "<li>task</li>");
+    expect(evt2.defaultPrevented).toBe(false);
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0].detail.policy).toBe("pause-on-pointerdown");
+  });
+
   it("pause-on-pointerdown handles pointercancel", () => {
     const el = createSSEElement({ "tavern-hot-policy": "pause-on-pointerdown" });
     window.Tavern.bind(el);

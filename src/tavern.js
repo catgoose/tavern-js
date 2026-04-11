@@ -800,6 +800,9 @@
 
       /**
        * Handles pointer release or cancellation.
+       * Attached to `document` so that releases outside the region are
+       * still captured (e.g. user drags pointer outside before releasing).
+       * Only acts when this element's pointerActive flag is set.
        */
       function onPointerEnd() {
         if (pointerActive) {
@@ -808,8 +811,8 @@
         }
       }
 
-      el.addEventListener("pointerup", onPointerEnd);
-      el.addEventListener("pointercancel", onPointerEnd);
+      document.addEventListener("pointerup", onPointerEnd);
+      document.addEventListener("pointercancel", onPointerEnd);
     }
 
     // --- defer-on-focus ---
