@@ -51,6 +51,8 @@
    * @property {string} [gapAction] - Action on replay gap: "reload", "banner", or custom event name
    * @property {string} [gapBannerText] - Text for the gap banner (default: "Connection interrupted. Click to refresh.")
    * @property {boolean} [debug] - Enable debug logging
+   * @property {string} [staleClass] - CSS class(es) applied when region becomes stale
+   * @property {string} [liveClass] - CSS class(es) applied when region is live
    */
 
   /**
@@ -70,6 +72,8 @@
       commandDelegate: el.getAttribute("tavern-command-delegate"),
       commandTarget: el.getAttribute("tavern-command-target"),
       hotPolicy: el.getAttribute("tavern-hot-policy"),
+      staleClass: el.getAttribute("tavern-stale-class"),
+      liveClass: el.getAttribute("tavern-live-class"),
     };
   }
 
@@ -111,6 +115,126 @@
   }
 
   /**
+   * Shows all children matching a given attribute selector within an element.
+   *
+   * @param {HTMLElement} el - Parent element to search within
+   * @param {string} attr - Attribute name to select (e.g. "tavern-status-live")
+   */
+  function showStatusByAttr(el, attr) {
+    el.querySelectorAll("[" + attr + "]").forEach(function (s) {
+      s.classList.remove("hidden");
+      s.removeAttribute("hidden");
+    });
+  }
+
+  /**
+   * Hides all children matching a given attribute selector within an element.
+   *
+   * @param {HTMLElement} el - Parent element to search within
+   * @param {string} attr - Attribute name to select (e.g. "tavern-status-stale")
+   */
+  function hideStatusByAttr(el, attr) {
+    el.querySelectorAll("[" + attr + "]").forEach(function (s) {
+      s.classList.add("hidden");
+      s.setAttribute("hidden", "");
+    });
+  }
+
+  /**
+   * Applies a space-separated list of CSS classes to an element.
+   *
+   * @param {HTMLElement} el - Target element
+   * @param {string} classes - Space-separated CSS class names
+   */
+  function addClasses(el, classes) {
+    if (!classes) return;
+    classes.split(/\s+/).forEach(function (cls) {
+      if (cls) el.classList.add(cls);
+    });
+  }
+
+  /**
+   * Removes a space-separated list of CSS classes from an element.
+   *
+   * @param {HTMLElement} el - Target element
+   * @param {string} classes - Space-separated CSS class names
+   */
+  function removeClasses(el, classes) {
+    if (!classes) return;
+    classes.split(/\s+/).forEach(function (cls) {
+      if (cls) el.classList.remove(cls);
+    });
+  }
+
+  /**
+   * Central state transition function for region state.
+   * Updates el._tavernRegionState, toggles stale/live classes,
+   * shows/hides status elements, and dispatches DOM events.
+   *
+   * Valid states: "connecting", "live", "disconnected", "recovering", "stale"
+   *
+   * @param {HTMLElement} el - The SSE-connected element
+   * @param {TavernConfig} config - Current configuration
+   * @param {string} newState - The new region state
+   * @param {Object} [detail] - Optional detail for dispatched events
+   */
+  function setRegionState(el, config, newState, detail) {
+    var oldState = el._tavernRegionState;
+    if (oldState === newState) return;
+
+    el._tavernRegionState = newState;
+
+    debug(config, "region state:", oldState, "→", newState);
+
+    if (newState === "connecting") {
+      removeClasses(el, config.liveClass);
+      removeClasses(el, config.staleClass);
+      hideStatusByAttr(el, "tavern-status-live");
+      hideStatusByAttr(el, "tavern-status-stale");
+      hideStatusByAttr(el, "tavern-status-recovering");
+    } else if (newState === "live") {
+      addClasses(el, config.liveClass);
+      removeClasses(el, config.staleClass);
+      showStatusByAttr(el, "tavern-status-live");
+      hideStatusByAttr(el, "tavern-status-stale");
+      hideStatusByAttr(el, "tavern-status-recovering");
+      el.dispatchEvent(
+        new CustomEvent("tavern:live", { bubbles: true, detail: detail || {} }),
+      );
+    } else if (newState === "disconnected") {
+      removeClasses(el, config.liveClass);
+      removeClasses(el, config.staleClass);
+      hideStatusByAttr(el, "tavern-status-live");
+      hideStatusByAttr(el, "tavern-status-stale");
+      hideStatusByAttr(el, "tavern-status-recovering");
+    } else if (newState === "recovering") {
+      removeClasses(el, config.liveClass);
+      removeClasses(el, config.staleClass);
+      hideStatusByAttr(el, "tavern-status-live");
+      hideStatusByAttr(el, "tavern-status-stale");
+      showStatusByAttr(el, "tavern-status-recovering");
+      el.dispatchEvent(
+        new CustomEvent("tavern:recovering", {
+          bubbles: true,
+          detail: detail || {},
+        }),
+      );
+    } else if (newState === "stale") {
+      addClasses(el, config.staleClass);
+      removeClasses(el, config.liveClass);
+      hideStatusByAttr(el, "tavern-status-live");
+      showStatusByAttr(el, "tavern-status-stale");
+      hideStatusByAttr(el, "tavern-status-recovering");
+      el.dispatchEvent(
+        new CustomEvent("tavern:stale", {
+          bubbles: true,
+          detail: detail || { reason: "replay-gap" },
+        }),
+      );
+    }
+  }
+
+  /**
    * Marks an element as disconnected: applies reconnecting class and shows
    * status elements.
    *
@@ -130,6 +254,8 @@
     }
 
     showStatus(el);
+
+    setRegionState(el, config, "disconnected");
 
     el.dispatchEvent(
       new CustomEvent("tavern:disconnected", { bubbles: true }),
@@ -157,6 +283,8 @@
 
     hideStatus(el);
 
+    setRegionState(el, config, "live");
+
     el.dispatchEvent(
       new CustomEvent("tavern:reconnected", { bubbles: true }),
     );
@@ -175,6 +303,7 @@
 
     var action = config.gapAction;
     if (!action) {
+      setRegionState(el, config, "stale", { reason: "replay-gap" });
       el.dispatchEvent(
         new CustomEvent("tavern:replay-gap", {
           bubbles: true,
@@ -190,11 +319,13 @@
     }
 
     if (action === "banner") {
+      setRegionState(el, config, "stale", { reason: "replay-gap" });
       showGapBanner(el, config);
       return;
     }
 
     // Custom event name — dispatch it
+    setRegionState(el, config, "stale", { reason: "replay-gap" });
     el.dispatchEvent(
       new CustomEvent(action, {
         bubbles: true,
@@ -333,6 +464,12 @@
     // Delegated commands
     bindDelegatedCommands(el, config);
 
+    // Initialize region state to "connecting" — not yet live until SSE opens
+    el._tavernRegionState = "connecting";
+    hideStatusByAttr(el, "tavern-status-live");
+    hideStatusByAttr(el, "tavern-status-stale");
+    hideStatusByAttr(el, "tavern-status-recovering");
+
     // Lifeline registration
     if (config.role === "lifeline") {
       if (_lifeline && document.body.contains(_lifeline)) {
@@ -391,12 +528,18 @@
     });
 
     el.addEventListener("htmx:sseOpen", function (e) {
+      // First connection: transition from "connecting" to "live"
+      if (el._tavernRegionState === "connecting") {
+        setRegionState(el, config, "live");
+      }
+
       // Transport reopened — do NOT call markReconnected() here.
       // The server's tavern-reconnected control event is the authoritative
       // signal that recovery (replay, gap handling) is complete.
       // Dispatch a transport-level event for debugging / UI hints only.
       if (el._tavernDisconnected) {
         debug(config, "transport open (awaiting server confirmation)", el);
+        setRegionState(el, config, "recovering");
         el.dispatchEvent(
           new CustomEvent("tavern:transport-open", { bubbles: true }),
         );

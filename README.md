@@ -93,6 +93,43 @@ Configure behavior declaratively on any `sse-connect` element:
 | `tavern-debug` | flag | Enable `console.debug` logging for this element. |
 | `tavern-hot-policy` | space-separated keywords | Interaction protection policies: `pause-on-pointerdown`, `defer-on-focus`. See [Hot-Region Interaction Protection](#hot-region-interaction-protection). |
 
+### Stale / Live Region State
+
+Beyond binary connected/disconnected, tavern.js tracks granular region
+state so the UI can reflect intermediate conditions like recovery and
+staleness.
+
+**State machine:**
+
+```
+LIVE → (sseError) → DISCONNECTED → (sseOpen) → RECOVERING → (tavern-reconnected) → LIVE
+LIVE → (replay-gap without reload) → STALE
+RECOVERING → (replay-gap) → STALE
+STALE → (tavern-reconnected) → LIVE
+```
+
+| Attribute | Type | Description |
+|---|---|---|
+| `tavern-stale-class` | CSS class(es) | Applied when the region becomes stale. Removed when region goes live. |
+| `tavern-live-class` | CSS class(es) | Applied when the region is live. Removed when region goes stale or disconnects. |
+
+| Status attribute | Shown when | Hidden when |
+|---|---|---|
+| `tavern-status-live` | Region is live | Stale, disconnected, or recovering |
+| `tavern-status-stale` | Region is stale | Live, disconnected, or recovering |
+| `tavern-status-recovering` | Transport open, awaiting server confirmation | Live, stale, or disconnected |
+
+```html
+<div sse-connect="/sse/feed"
+     sse-swap="post"
+     tavern-stale-class="opacity-50"
+     tavern-live-class="opacity-100">
+  <span tavern-status-live>Live</span>
+  <span tavern-status-stale class="hidden">Stale — waiting for recovery</span>
+  <span tavern-status-recovering class="hidden">Reconnecting…</span>
+</div>
+```
+
 ### Status Elements
 
 Any child element with `tavern-status` is automatically shown during
@@ -120,6 +157,9 @@ tavern.js dispatches bubbling custom events for programmatic handling:
 | `tavern:reconnected` | — | Server confirmed reconnection |
 | `tavern:replay-gap` | `{ lastEventId }` | Replay log can't satisfy request (only when no `tavern-gap-action`) |
 | `tavern:topics-changed` | parsed JSON payload | Topic subscriptions changed |
+| `tavern:stale` | `{ reason }` | Region entered stale state (e.g. replay gap without reload) |
+| `tavern:live` | — | Region is fully live again |
+| `tavern:recovering` | — | Transport open, recovery in progress |
 
 ```javascript
 document.addEventListener("tavern:disconnected", (e) => {
