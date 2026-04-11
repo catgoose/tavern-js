@@ -1345,6 +1345,35 @@ describe("delegated commands", () => {
     });
   });
 
+  it("closest() match outside the bound parent is ignored", () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+
+    // Create a wrapper that itself matches [command-url] — it sits OUTSIDE the SSE element
+    const outer = document.createElement("div");
+    outer.setAttribute("command-url", "/should-not-fire");
+    outer.setAttribute("command-id", "999");
+    document.body.appendChild(outer);
+
+    const el = createSSEElement({
+      "tavern-command-delegate": "click",
+      "tavern-command-target": "[command-url]",
+    });
+    // Move el inside the outer wrapper so closest() could walk up to it
+    outer.appendChild(el);
+
+    window.Tavern.bind(el);
+
+    // Click a plain child inside el — closest("[command-url]") would walk up to `outer`
+    const child = document.createElement("span");
+    child.textContent = "click me";
+    el.appendChild(child);
+
+    child.click();
+
+    // The outer element is outside el, so the command must NOT fire
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("element without tavern-command-delegate does not set up delegation", () => {
     globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
 

@@ -653,7 +653,7 @@
 
     el.addEventListener(eventType, function (e) {
       var target = e.target.closest(selector);
-      if (!target) return;
+      if (!target || !el.contains(target)) return;
 
       var url = target.getAttribute("command-url");
       if (!url) return;
