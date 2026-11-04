@@ -1530,23 +1530,30 @@ describe("delegated commands", () => {
       expect(seen[0].event.detail.element).toBe(child);
     });
 
-    it("reports on the region when the element moved out of it", async () => {
-      const pending = deferred();
-      globalThis.fetch.mockReturnValue(pending.promise);
-      const { el, seen } = bindRegion();
-      const child = createCommandChild(el, { "command-url": "/vote" });
-      const onChild = vi.fn();
-      child.addEventListener("tavern:command-success", onChild);
+    for (const [type, settle, check] of [
+      ["tavern:command-success", (p) => p.resolve({ ok: true, status: 200, statusText: "OK" }), (d) => expect(d.response.status).toBe(200)],
+      ["tavern:command-error", (p) => p.resolve({ ok: false, status: 500, statusText: "Internal Server Error" }), (d) => expect(d.error.message).toContain("500")],
+    ]) {
+      it(`${type} still reaches an element that moved out of the region and stayed connected`, async () => {
+        const pending = deferred();
+        globalThis.fetch.mockReturnValue(pending.promise);
+        const { el, seen } = bindRegion();
+        const child = createCommandChild(el, { "command-url": "/vote" });
+        const onChild = vi.fn();
+        child.addEventListener(type, onChild);
 
-      child.click();
-      document.body.appendChild(child);
-      pending.resolve({ ok: true, status: 200, statusText: "OK" });
+        child.click();
+        document.body.appendChild(child);
+        settle(pending);
 
-      await vi.waitFor(() => expect(seen).toHaveLength(2));
-      expect(seen.map((s) => s.at)).toEqual(["region", "document"]);
-      expect(seen[0].event.target).toBe(el);
-      expect(onChild).not.toHaveBeenCalled();
-    });
+        await vi.waitFor(() => expect(onChild).toHaveBeenCalledOnce());
+        expect(onChild.mock.calls[0][0].target).toBe(child);
+        expect(onChild.mock.calls[0][0].detail.element).toBe(child);
+        check(onChild.mock.calls[0][0].detail);
+        // The event bubbles through the element's current ancestors only.
+        expect(seen.map((s) => s.at)).toEqual(["document"]);
+      });
+    }
 
     it("reports on the document when the whole region was removed", async () => {
       const pending = deferred();

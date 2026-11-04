@@ -489,15 +489,16 @@ SSE region:
 bubbles. In a hot region, the server's update for a command often replaces
 its element before the POST settles, so success and error are dispatched on:
 
-1. the matched element, if it is still inside the bound region;
-2. otherwise the bound region, if it is still in the document (for example,
-   the element was replaced, removed or moved out);
+1. the matched element, if it is still in the document (wherever it now is);
+2. otherwise the bound region, if it is still in the document (the element
+   was replaced or removed);
 3. otherwise the document.
 
-Listen on the region or the document to see every outcome, and use
+Listen on the document to see every outcome, and use
 `event.detail.element` (not `event.target`) to tell which command it was.
-A listener on the element itself only hears outcomes that settle while the
-element is still in the region.
+A listener on the region hears every outcome except one whose element was
+moved out of the region and is still in the document: that event bubbles
+through the element's new ancestors instead.
 
 ### Hearth (Hot-Region Shorthand)
 

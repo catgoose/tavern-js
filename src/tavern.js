@@ -1064,10 +1064,10 @@
       );
 
       /**
-       * Dispatches a command outcome once, where the region and document
-       * can still observe it. The command element is used while it is still
-       * inside the region; a live update may have replaced, removed or moved
-       * it by the time the request settles, so the outcome then goes to the
+       * Dispatches a command outcome once. The command element is used while
+       * it is still in the document, wherever it now is, so its own
+       * listeners keep working. A live update may have replaced or removed
+       * it by the time the request settles; the outcome then goes to the
        * region, or to the document when the region is gone too.
        *
        * @param {string} type - Event name
@@ -1075,7 +1075,7 @@
        */
       function dispatchOutcome(type, detail) {
         let origin = document;
-        if (target.isConnected && el.contains(target)) {
+        if (target.isConnected) {
           origin = target;
         } else if (el.isConnected) {
           origin = el;
