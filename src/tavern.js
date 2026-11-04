@@ -1059,26 +1059,42 @@
       target.dispatchEvent(
         new CustomEvent("tavern:command-sent", {
           bubbles: true,
-          detail: { url: url, body: body },
+          detail: { url: url, body: body, element: target },
         }),
       );
 
+      /**
+       * Dispatches a command outcome once. The command element is used while
+       * it is still in the document, wherever it now is, so its own
+       * listeners keep working. A live update may have replaced or removed
+       * it by the time the request settles; the outcome then goes to the
+       * region, or to the document when the region is gone too.
+       *
+       * @param {string} type - Event name
+       * @param {Object} detail - Event detail; `element` is the command element
+       */
+      function dispatchOutcome(type, detail) {
+        let origin = document;
+        if (target.isConnected) {
+          origin = target;
+        } else if (el.isConnected) {
+          origin = el;
+        }
+        origin.dispatchEvent(
+          new CustomEvent(type, { bubbles: true, detail: detail }),
+        );
+      }
+
       command(url, body).then(
         function (response) {
-          target.dispatchEvent(
-            new CustomEvent("tavern:command-success", {
-              bubbles: true,
-              detail: { url: url, body: body, response: response },
-            }),
-          );
+          dispatchOutcome("tavern:command-success", {
+            url: url, body: body, response: response, element: target,
+          });
         },
         function (error) {
-          target.dispatchEvent(
-            new CustomEvent("tavern:command-error", {
-              bubbles: true,
-              detail: { url: url, body: body, error: error },
-            }),
-          );
+          dispatchOutcome("tavern:command-error", {
+            url: url, body: body, error: error, element: target,
+          });
         },
       );
     }

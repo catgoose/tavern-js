@@ -1420,6 +1420,182 @@ describe("delegated commands", () => {
     expect(spy.mock.calls[0][0].detail.error.message).toContain("500");
   });
 
+  describe("outcomes after the command element leaves", () => {
+    /**
+     * Returns a promise with its resolve and reject functions, so a test
+     * decides when fetch settles.
+     *
+     * @returns {{ promise: Promise, resolve: Function, reject: Function }}
+     */
+    function deferred() {
+      let resolve, reject;
+      const promise = new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    /**
+     * Binds a click-delegated region and records outcome events seen on the
+     * region and on the document.
+     *
+     * @returns {{ el: HTMLElement, seen: Array<{ at: string, type: string, event: CustomEvent }> }}
+     */
+    function bindRegion() {
+      const el = createSSEElement({
+        "tavern-command-delegate": "click",
+        "tavern-command-target": "[command-url]",
+      });
+      window.Tavern.bind(el);
+      const seen = [];
+      for (const type of ["tavern:command-success", "tavern:command-error"]) {
+        el.addEventListener(type, (event) => seen.push({ at: "region", type, event }));
+        document.addEventListener(type, (event) => seen.push({ at: "document", type, event }));
+      }
+      return { el, seen };
+    }
+
+    it("reports success on the region when the element was replaced before the response", async () => {
+      const pending = deferred();
+      globalThis.fetch.mockReturnValue(pending.promise);
+      const { el, seen } = bindRegion();
+      const child = createCommandChild(el, { "command-url": "/vote", "command-id": "7" });
+
+      child.click();
+      child.replaceWith(createCommandChild(document.createElement("div"), { "command-url": "/vote" }));
+      const response = { ok: true, status: 200, statusText: "OK" };
+      pending.resolve(response);
+
+      await vi.waitFor(() => expect(seen).toHaveLength(2));
+      expect(seen.map((s) => s.at)).toEqual(["region", "document"]);
+      const event = seen[0].event;
+      expect(event.type).toBe("tavern:command-success");
+      expect(event.target).toBe(el);
+      expect(event.detail.element).toBe(child);
+      expect(event.detail.url).toBe("/vote");
+      expect(event.detail.body).toEqual({ id: "7" });
+      expect(event.detail.response).toBe(response);
+    });
+
+    it("reports a non-2xx response on the region when the element was removed", async () => {
+      const pending = deferred();
+      globalThis.fetch.mockReturnValue(pending.promise);
+      const { el, seen } = bindRegion();
+      const child = createCommandChild(el, { "command-url": "/vote" });
+
+      child.click();
+      child.remove();
+      pending.resolve({ ok: false, status: 409, statusText: "Conflict" });
+
+      await vi.waitFor(() => expect(seen).toHaveLength(2));
+      expect(seen.map((s) => s.at)).toEqual(["region", "document"]);
+      expect(seen[0].type).toBe("tavern:command-error");
+      expect(seen[0].event.detail.element).toBe(child);
+      expect(seen[0].event.detail.error.message).toContain("409");
+    });
+
+    it("reports a network failure on the region when the element was replaced", async () => {
+      const pending = deferred();
+      globalThis.fetch.mockReturnValue(pending.promise);
+      const { el, seen } = bindRegion();
+      const child = createCommandChild(el, { "command-url": "/vote" });
+
+      child.click();
+      child.replaceWith(document.createElement("button"));
+      const failure = new TypeError("Failed to fetch");
+      pending.reject(failure);
+
+      await vi.waitFor(() => expect(seen).toHaveLength(2));
+      expect(seen[0].at).toBe("region");
+      expect(seen[0].type).toBe("tavern:command-error");
+      expect(seen[0].event.detail.error).toBe(failure);
+    });
+
+    it("still reports on a connected element, once, bubbling through the region", async () => {
+      const pending = deferred();
+      globalThis.fetch.mockReturnValue(pending.promise);
+      const { el, seen } = bindRegion();
+      const child = createCommandChild(el, { "command-url": "/vote" });
+      const onChild = vi.fn();
+      child.addEventListener("tavern:command-success", onChild);
+
+      child.click();
+      pending.resolve({ ok: true, status: 200, statusText: "OK" });
+
+      await vi.waitFor(() => expect(seen).toHaveLength(2));
+      expect(onChild).toHaveBeenCalledOnce();
+      expect(seen.map((s) => s.at)).toEqual(["region", "document"]);
+      expect(seen[0].event.target).toBe(child);
+      expect(seen[0].event.detail.element).toBe(child);
+    });
+
+    for (const [type, settle, check] of [
+      ["tavern:command-success", (p) => p.resolve({ ok: true, status: 200, statusText: "OK" }), (d) => expect(d.response.status).toBe(200)],
+      ["tavern:command-error", (p) => p.resolve({ ok: false, status: 500, statusText: "Internal Server Error" }), (d) => expect(d.error.message).toContain("500")],
+    ]) {
+      it(`${type} still reaches an element that moved out of the region and stayed connected`, async () => {
+        const pending = deferred();
+        globalThis.fetch.mockReturnValue(pending.promise);
+        const { el, seen } = bindRegion();
+        const child = createCommandChild(el, { "command-url": "/vote" });
+        const onChild = vi.fn();
+        child.addEventListener(type, onChild);
+
+        child.click();
+        document.body.appendChild(child);
+        settle(pending);
+
+        await vi.waitFor(() => expect(onChild).toHaveBeenCalledOnce());
+        expect(onChild.mock.calls[0][0].target).toBe(child);
+        expect(onChild.mock.calls[0][0].detail.element).toBe(child);
+        check(onChild.mock.calls[0][0].detail);
+        // The event bubbles through the element's current ancestors only.
+        expect(seen.map((s) => s.at)).toEqual(["document"]);
+      });
+    }
+
+    it("reports on the document when the whole region was removed", async () => {
+      const pending = deferred();
+      globalThis.fetch.mockReturnValue(pending.promise);
+      const { el, seen } = bindRegion();
+      const child = createCommandChild(el, { "command-url": "/vote" });
+
+      child.click();
+      el.remove();
+      pending.resolve({ ok: true, status: 200, statusText: "OK" });
+
+      await vi.waitFor(() => expect(seen).toHaveLength(1));
+      expect(seen[0].at).toBe("document");
+      expect(seen[0].event.target).toBe(document);
+      expect(seen[0].event.detail.element).toBe(child);
+    });
+
+    it("keeps each outcome with its own command when responses arrive out of order", async () => {
+      const first = deferred();
+      const second = deferred();
+      globalThis.fetch.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      const { el, seen } = bindRegion();
+      const a = createCommandChild(el, { "command-url": "/vote", "command-id": "1" });
+      const b = createCommandChild(el, { "command-url": "/vote", "command-id": "2" });
+
+      a.click();
+      b.click();
+      a.remove();
+      b.remove();
+      second.resolve({ ok: true, status: 200, statusText: "OK" });
+      await vi.waitFor(() => expect(seen).toHaveLength(2));
+      first.resolve({ ok: false, status: 500, statusText: "Internal Server Error" });
+      await vi.waitFor(() => expect(seen).toHaveLength(4));
+
+      const atRegion = seen.filter((s) => s.at === "region");
+      expect(atRegion.map((s) => [s.type, s.event.detail.element, s.event.detail.body.id])).toEqual([
+        ["tavern:command-success", b, "2"],
+        ["tavern:command-error", a, "1"],
+      ]);
+    });
+  });
+
   it("nested matching — closest() finds the nearest ancestor with the selector", async () => {
     globalThis.fetch.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
 

@@ -481,9 +481,24 @@ SSE region:
 
 | Event | Dispatched on | `detail` | When |
 |---|---|---|---|
-| `tavern:command-sent` | matched element | `{ url, body }` | Immediately before the POST |
-| `tavern:command-success` | matched element | `{ url, body, response }` | POST returned 2xx |
-| `tavern:command-error` | matched element | `{ url, body, error }` | POST failed or returned non-2xx |
+| `tavern:command-sent` | matched element | `{ url, body, element }` | Immediately before the POST |
+| `tavern:command-success` | see below | `{ url, body, response, element }` | POST returned 2xx |
+| `tavern:command-error` | see below | `{ url, body, error, element }` | POST failed or returned non-2xx |
+
+`element` is the matched command element. Each event is dispatched once and
+bubbles. In a hot region, the server's update for a command often replaces
+its element before the POST settles, so success and error are dispatched on:
+
+1. the matched element, if it is still in the document (wherever it now is);
+2. otherwise the bound region, if it is still in the document (the element
+   was replaced or removed);
+3. otherwise the document.
+
+Listen on the document to see every outcome, and use
+`event.detail.element` (not `event.target`) to tell which command it was.
+A listener on the region hears every outcome except one whose element was
+moved out of the region and is still in the document: that event bubbles
+through the element's new ancestors instead.
 
 ### Hearth (Hot-Region Shorthand)
 
